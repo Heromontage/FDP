@@ -1,58 +1,51 @@
 export default function DiagnosticFeed({ logs }) {
-  const getLevelStyle = (level) => {
+  const levelStyle = (level) => {
     switch (level) {
-      case 'success':
-        return { borderColor: '#00FF88', timeColor: '#00FF88' };
-      case 'warning':
-        return { borderColor: '#FFB800', timeColor: '#FFB800' };
-      case 'error':
-        return { borderColor: '#FFB4AB', timeColor: '#FFB4AB' };
-      default:
-        return { borderColor: '#3B4B3D', timeColor: '#B9CBB9' };
+      case 'success': return { border: '#00FF88', time: '#00FF88' };
+      case 'warning': return { border: '#FFBA20', time: '#FFBA20' };
+      case 'error':   return { border: '#FFB4AB', time: '#FFB4AB' };
+      default:        return { border: '#3B4B3D', time: '#849585' };
     }
   };
 
+  const errorCount = logs.filter((l) => l.level === 'error').length;
+
   return (
-    <div
-      className="p-5 md:p-6 rounded-xl animate-fade-in-up"
-      style={{
-        background: '#282A30',
-        border: '1px solid rgba(59, 75, 61, 0.1)',
-        animationDelay: '500ms',
-      }}
-    >
-      <h3
-        className="font-headline uppercase font-bold mb-4"
-        style={{ fontSize: '10px', letterSpacing: '0.2em', color: '#B9CBB9' }}
-      >
-        Diagnostic Feed
-      </h3>
-      <div
-        className="space-y-3 overflow-y-auto pr-2"
-        style={{ maxHeight: '400px' }}
-      >
+    <div className="rounded-xl animate-fade-in-up flex flex-col"
+      style={{ background: '#282A30', border: '1px solid rgba(59,75,61,0.12)', padding: '1.25rem', animationDelay: '500ms', flex: 1 }}>
+
+      <div className="flex items-center justify-between mb-4 flex-shrink-0">
+        <h3 className="font-headline uppercase font-semibold"
+          style={{ fontSize: '9px', letterSpacing: '0.2em', color: '#849585' }}>
+          Diagnostic Feed
+        </h3>
+        <div className="flex items-center gap-2">
+          {errorCount > 0 && (
+            <span className="font-mono px-1.5 py-0.5 rounded"
+              style={{ fontSize: '8px', color: '#FFB4AB', background: 'rgba(255,180,171,0.12)' }}>
+              {errorCount} ERR
+            </span>
+          )}
+          <span className="font-mono" style={{ fontSize: '8px', color: '#3B4B3D' }}>
+            {logs.length} entries
+          </span>
+        </div>
+      </div>
+
+      <div className="space-y-2.5 overflow-y-auto pr-1" style={{ maxHeight: '320px' }}>
         {logs.map((log, i) => {
-          const style = getLevelStyle(log.level);
+          const s = levelStyle(log.level);
+          const opacity = i === 0 ? 1 : i < 3 ? 0.85 : i < 6 ? 0.6 : 0.3;
           return (
-            <div
-              key={i}
-              className="font-mono leading-relaxed py-1 pl-3"
-              style={{
-                fontSize: '9px',
-                borderLeft: `2px solid ${style.borderColor}`,
-                opacity: i > 5 ? 0.4 : 1 - i * 0.08,
-              }}
-            >
-              <div style={{ color: style.timeColor }}>{log.time}</div>
-              <div style={{ color: '#E2E2EB' }}>{log.message}</div>
+            <div key={i} className="pl-3 py-1 font-mono leading-relaxed"
+              style={{ fontSize: '8.5px', borderLeft: `2px solid ${s.border}`, opacity }}>
+              <div className="mb-0.5" style={{ color: s.time }}>{log.time}</div>
+              <div style={{ color: '#C8C8D4', lineHeight: 1.45 }}>{log.message}</div>
             </div>
           );
         })}
         {logs.length === 0 && (
-          <div
-            className="font-mono text-center py-4"
-            style={{ fontSize: '10px', color: '#849585' }}
-          >
+          <div className="font-mono text-center py-6" style={{ fontSize: '9px', color: '#3B4B3D' }}>
             No entries yet...
           </div>
         )}
