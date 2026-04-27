@@ -1,127 +1,175 @@
 #include <WiFi.h>
-#include <WebServer.h>
+#include <AsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <math.h>
 
-// --- WiFi Settings ---
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
-WebServer server(80);
+// --- NETWORK SETUP ---
+IPAddress local_IP(172, 20, 10, 6); 
+IPAddress gateway(172, 20, 10, 1);    
+IPAddress subnet(255, 255, 255, 0);
 
-// --- Motor Pins (Example for L298N) ---
-const int ENA = 14; 
-const int IN1 = 27; 
-const int IN2 = 26; 
-const int IN3 = 25; 
-const int IN4 = 33; 
-const int ENB = 32;
+const char *ssid = "Mehul’s iPhone"; 
+const char *password = "mahi2604"; 
 
-// --- Sensor Pins (Ultrasonic) ---
-const int TRIG_FRONT = 5;
-const int ECHO_FRONT = 18;
-const int TRIG_SIDE = 19;
-const int ECHO_SIDE = 21;
+// --- SAFE ULTRASONIC PINS ---
+#define echo1 4
+#define trig1 16
 
-// --- Odometry / State ---
+#define echo2 17  // SIDE SENSOR 1 (Front-Side)
+#define trig2 5
+
+#define echo3 19  // SIDE SENSOR 2 (Back-Side)
+#define trig3 18
+
+// --- SAFE MOTOR DRIVER PINS ---
+#define en12 14
+#define in1  27
+#define in2  26  
+#define in3  25  
+#define in4  33  
+#define en34 32
+
+float front_distance, side_front_dist, side_back_dist;
+float msTocm = 0.0343 / 2;
+
+// --- ODOMETRY ---
 float x = 0.0, y = 0.0, theta = 0.0;
-float front_dist = 0.0, side_dist = 0.0;
-unsigned long lastTime = 0;
 
-void setupMotors() {
-  pinMode(ENA, OUTPUT); pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT);
-  pinMode(ENB, OUTPUT); pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
-  
-  // Set default speed
-  analogWrite(ENA, 150);
-  analogWrite(ENB, 150);
+// --- DUAL-SENSOR PID VARIABLES ---
+float targetDistance = 10.0; // Stay 10cm from the wall
+float Kp_dist = 8.0;         // Aggressiveness for fixing distance
+float Kp_angle = 12.0;       // Aggressiveness for fixing rotation/angle
+int baseSpeed = 150;         // Forward speed (0-255)
+
+AsyncWebServer server(80);
+
+void wifi_init(){
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi");
+
+  IPAddress ip = WiFi.localIP();
+  Serial.println("***************************************");
+  Serial.print("IP Address: ");
+  Serial.println(ip);
+  Serial.println("***************************************");
+
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", fetch());
+  });
+  server.begin();
 }
 
-void setMotors(int leftSpeed, int rightSpeed) {
-  // Left Motor
-  digitalWrite(IN1, leftSpeed > 0 ? HIGH : LOW);
-  digitalWrite(IN2, leftSpeed < 0 ? HIGH : LOW);
-  analogWrite(ENA, abs(leftSpeed));
-
-  // Right Motor
-  digitalWrite(IN3, rightSpeed > 0 ? HIGH : LOW);
-  digitalWrite(IN4, rightSpeed < 0 ? HIGH : LOW);
-  analogWrite(ENB, abs(rightSpeed));
-}
-
-float readDistance(int trig, int echo) {
-  digitalWrite(trig, LOW); delayMicroseconds(2);
-  digitalWrite(trig, HIGH); delayMicroseconds(10);
-  digitalWrite(trig, LOW);
-  long duration = pulseIn(echo, HIGH, 30000); // 30ms timeout
-  if (duration == 0) return 999.0;
-  return (duration * 0.0343) / 2.0;
+String fetch(){
+  return String(x) + " " + String(y) + " " + String(theta);
 }
 
 void setup() {
   Serial.begin(115200);
-  setupMotors();
-  
-  pinMode(TRIG_FRONT, OUTPUT); pinMode(ECHO_FRONT, INPUT);
-  pinMode(TRIG_SIDE, OUTPUT); pinMode(ECHO_SIDE, INPUT);
-
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500); Serial.print(".");
+  if (!WiFi.config(local_IP, gateway, subnet)) {
+    Serial.println("STA Failed to configure");
   }
-  Serial.println("\nIP Address: ");
-  Serial.println(WiFi.localIP());
 
-  // Python bridge requests this endpoint
-  server.on("/", []() {
-    char buf[64];
-    // Return: x y theta
-    sprintf(buf, "%d %d %.2f", (int)x, (int)y, theta);
-    server.send(200, "text/plain", buf);
-  });
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  wifi_init();
 
-  server.on("/sensors", []() {
-    char buf[128];
-    sprintf(buf, "{\"front_dist\": %.2f, \"side_dist\": %.2f}", front_dist, side_dist);
-    server.send(200, "application/json", buf);
-  });
+  pinMode(in1, OUTPUT); pinMode(in2, OUTPUT); pinMode(en12, OUTPUT);
+  pinMode(in3, OUTPUT); pinMode(in4, OUTPUT); pinMode(en34, OUTPUT);
+  
+  pinMode(trig1, OUTPUT); pinMode(echo1, INPUT);
+  pinMode(trig2, OUTPUT); pinMode(echo2, INPUT);
+  pinMode(trig3, OUTPUT); pinMode(echo3, INPUT); // Added 3rd sensor
 
-  server.begin();
+  digitalWrite(in1, LOW); digitalWrite(in2, LOW);  
+  digitalWrite(in3, LOW); digitalWrite(in4, LOW);
+}
+
+float getFrontDist() {
+  digitalWrite(trig1, LOW); delay(2);
+  digitalWrite(trig1, HIGH); delay(5);
+  digitalWrite(trig1, LOW);
+  long duration = pulseIn(echo1, HIGH, 30000);
+  return abs(duration * msTocm);
+}
+
+float getSideFrontDist() {
+  digitalWrite(trig2, LOW); delay(2);
+  digitalWrite(trig2, HIGH); delay(5);
+  digitalWrite(trig2, LOW);
+  long duration = pulseIn(echo2, HIGH, 30000);
+  return abs(duration * msTocm);
+}
+
+float getSideBackDist() {
+  digitalWrite(trig3, LOW); delay(2);
+  digitalWrite(trig3, HIGH); delay(5);
+  digitalWrite(trig3, LOW);
+  long duration = pulseIn(echo3, HIGH, 30000);
+  return abs(duration * msTocm);
+}
+
+void setMotors(int leftSpeed, int rightSpeed) {
+  leftSpeed = constrain(leftSpeed, 0, 255);
+  rightSpeed = constrain(rightSpeed, 0, 255);
+
+  digitalWrite(in1, HIGH); digitalWrite(in2, LOW);
+  analogWrite(en12, leftSpeed); 
+
+  digitalWrite(in3, HIGH); digitalWrite(in4, LOW);
+  analogWrite(en34, rightSpeed);
+}
+
+void stopMotors() {
+  digitalWrite(in1, LOW); digitalWrite(in2, LOW);
+  digitalWrite(in3, LOW); digitalWrite(in4, LOW);
+  analogWrite(en12, 0);   analogWrite(en34, 0);
 }
 
 void loop() {
-  server.handleClient();
-  
-  // 1. Read Sensors
-  front_dist = readDistance(TRIG_FRONT, ECHO_FRONT);
-  side_dist = readDistance(TRIG_SIDE, ECHO_SIDE);
+  front_distance = getFrontDist();
+  side_front_dist = getSideFrontDist();
+  side_back_dist = getSideBackDist();
 
-  // 2. Wall Following Logic (Circle the object)
-  int target_side = 10; // Keep 10cm from the object on the side
-  
-  if (front_dist < 15) {
-    // Obstacle ahead: Turn sharply away
-    setMotors(150, -100); 
+  if (front_distance > 0 && front_distance < 15) {
+    // Emergency Brake
+    stopMotors();
+  } else if (side_front_dist > 0 && side_front_dist < 100 && side_back_dist > 0 && side_back_dist < 100) {
+    // --- ADVANCED P-CONTROLLER ---
+    
+    // 1. Distance Error (How far are we from 10cm?)
+    float dist_error = side_front_dist - targetDistance;
+    
+    // 2. Angle Error (Are we parallel? If front > back, we are pointing away from the wall)
+    float angle_error = side_front_dist - side_back_dist;
+
+    // 3. Combined Correction
+    float correction = (Kp_dist * dist_error) + (Kp_angle * angle_error);
+
+    // IMPORTANT: STEERING DIRECTION
+    // Assuming sensors are on the LEFT wall. If correction is positive (too far away), 
+    // we want to turn LEFT toward the wall. To turn left, we slow down the left wheel and speed up the right wheel.
+    int leftSpeed = baseSpeed - correction;  
+    int rightSpeed = baseSpeed + correction; 
+
+    /* Note: If your sensors are on the RIGHT side of the robot instead of the left, 
+       just swap the plus and minus signs above!
+       leftSpeed = baseSpeed + correction;
+       rightSpeed = baseSpeed - correction; */
+
+    setMotors(leftSpeed, rightSpeed);
+    y += 1.0; 
   } else {
-    // Adjust side distance to curve around the object
-    int error = target_side - side_dist; 
-    int base_speed = 120;
-    
-    // Simple Proportional control to keep distance
-    int correction = error * 5; 
-    
-    // Left motor (outside), Right motor (inside near object)
-    setMotors(base_speed + correction, base_speed - correction);
+    // Lost the wall? Just drive straight
+    setMotors(baseSpeed, baseSpeed);
+    y += 1.0;
   }
-
-  // 3. Simple Odometry Mockup (For Demo/Integration purposes)
-  // In a real scenario, you'd use encoders to increment x, y, and theta.
-  unsigned long now = millis();
-  float dt = (now - lastTime) / 1000.0;
-  lastTime = now;
-  
-  // Simulated rotation for the python bridge
-  theta += 10.0 * dt; 
-  if (theta >= 360) theta = 0;
-  x += 5.0 * cos(theta * PI / 180.0) * dt;
-  y += 5.0 * sin(theta * PI / 180.0) * dt;
-
+  // --- ADD THIS TO YOUR LOOP() ---
+  Serial.print("Front: "); Serial.print(front_distance);
+  Serial.print(" cm | Front-Side: "); Serial.print(side_front_dist);
+  Serial.print(" cm | Back-Side: "); Serial.println(side_back_dist);
+  // -------------------------------
   delay(50);
 }
