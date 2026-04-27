@@ -5,13 +5,14 @@ Sits between the ESP32 robot (172.20.10.6) and the React web app.
   • Polls the ESP32 for (x, y, theta) + sensor distances
   • Accumulates the robot's path
   • Runs real-time concave-shape detection (same logic as is_concave.py)
-  • Serves a JSON API at http://localhost:5000/sensordata for the React app
+  • Serves a JSON API at http://localhost:5001/sensordata for the React app
   • Optionally writes positions.csv (for compatibility with your Python scripts)
 
 Usage:
-    python bridge_server.py [ESP_IP]
+    python bridge_server.py [ESP_IP] [PORT]
 
-    ESP_IP defaults to 172.20.10.6 — pass a different IP as CLI arg if needed.
+    ESP_IP defaults to 172.20.10.6
+    PORT   defaults to 5001  (changed from 5000 to avoid macOS AirPlay conflict)
 """
 
 import sys
@@ -20,6 +21,7 @@ import threading
 import math
 import csv
 import os
+import socket
 
 import numpy as np
 import requests
@@ -28,6 +30,7 @@ from flask_cors import CORS
 
 # ── Config ────────────────────────────────────────────────────────────────────
 ESP_IP          = sys.argv[1] if len(sys.argv) > 1 else "172.20.10.6"
+PORT            = int(sys.argv[2]) if len(sys.argv) > 2 else 5001
 POLL_INTERVAL   = 0.5          # seconds between ESP32 polls
 MAX_PATH_POINTS = 300          # keep last N path points in memory
 WRITE_CSV       = True         # also write positions.csv for your Python scripts
@@ -38,32 +41,25 @@ state = {
     "x":          0,
     "y":          0,
     "theta":      0.0,
-    "front_dist": 0.0,   # cm – from ESP32 /sensors endpoint (if available)
-    "side_dist":  0.0,   # cm
+    "front_dist": 0.0,
+    "side_dist":  0.0,
     "shape":      "INITIALIZING...",
-    "path":       [],    # list of {"x": int, "y": int}
+    "path":       [],
     "is_complete": False,
     "connected":  False,
     "error":      None,
 }
 state_lock = threading.Lock()
 
-# ── Concave detection (mirrors is_concave.py) ─────────────────────────────────
+# ── Concave detection ─────────────────────────────────────────────────────────
 def is_concave_polygon(vertices):
-    """
-    Returns True if the polygon formed by `vertices` has at least one
-    'dent' (i.e., one vertex closer to the centroid than its neighbours).
-    """
     if len(vertices) < 4:
         return False
-
     xs = [v[0] for v in vertices]
     ys = [v[1] for v in vertices]
     cx = sum(xs) / len(vertices)
     cy = sum(ys) / len(vertices)
-
     distances = [math.sqrt((x - cx) ** 2 + (y - cy) ** 2) for x, y in vertices]
-
     n = len(distances)
     for i in range(n):
         prev_d = distances[(i - 1) % n]
@@ -75,22 +71,16 @@ def is_concave_polygon(vertices):
 
 
 def detect_shape_from_path(path):
-    """
-    Sample up to ~24 evenly-spaced points from the accumulated path
-    and run concave detection.
-    """
     if len(path) < 5:
         return "SCANNING..."
-
-    step     = max(1, len(path) // 24)
-    sampled  = [[p["x"], p["y"]] for p in path[::step]]
-
+    step    = max(1, len(path) // 24)
+    sampled = [[p["x"], p["y"]] for p in path[::step]]
     if is_concave_polygon(sampled):
         return "CONCAVE SHAPE DETECTED"
     return "CONVEX SHAPE DETECTED"
 
 
-# ── CSV helpers (keeps compatibility with your existing Python scripts) ────────
+# ── CSV helpers ───────────────────────────────────────────────────────────────
 def csv_init():
     with open(CSV_PATH, "w", newline="") as f:
         csv.DictWriter(f, ["x", "y"]).writeheader()
@@ -104,10 +94,10 @@ def csv_append(x, y):
 # ── Background polling thread ─────────────────────────────────────────────────
 def poll_esp():
     prev_x = prev_y = None
+    print(f"[bridge] Polling thread started — targeting http://{ESP_IP}/")
 
     while True:
         try:
-            # ── Primary endpoint: x y theta (plain text) ──────────────────
             r = requests.get(f"http://{ESP_IP}/", timeout=2)
             r.raise_for_status()
 
@@ -123,7 +113,6 @@ def poll_esp():
                 state["connected"] = True
                 state["error"]     = None
 
-                # Append new position if it moved
                 if x != prev_x or y != prev_y:
                     state["path"].append({"x": x, "y": y})
                     if len(state["path"]) > MAX_PATH_POINTS:
@@ -132,11 +121,9 @@ def poll_esp():
                         csv_append(x, y)
                     prev_x, prev_y = x, y
 
-                # Real-time shape detection
                 if len(state["path"]) >= 5:
                     state["shape"] = detect_shape_from_path(state["path"])
 
-                # Robot completed a full 360° rotation → finalize
                 if theta >= 360 and not state["is_complete"]:
                     state["is_complete"] = True
                     state["shape"]       = detect_shape_from_path(state["path"])
@@ -146,13 +133,13 @@ def poll_esp():
             with state_lock:
                 state["connected"] = False
                 state["error"]     = "ESP32 unreachable"
+            # Only print once every ~10 s to avoid log spam
         except Exception as e:
             with state_lock:
                 state["connected"] = False
                 state["error"]     = str(e)
 
-        # ── Optional: fetch sensor distances from /sensors ────────────────
-        # (only available if you add that route to the updated ESPCode.ino)
+        # Optional /sensors endpoint
         try:
             rs = requests.get(f"http://{ESP_IP}/sensors", timeout=1)
             if rs.status_code == 200:
@@ -161,39 +148,24 @@ def poll_esp():
                     state["front_dist"] = d.get("front_dist", 0.0)
                     state["side_dist"]  = d.get("side_dist",  0.0)
         except Exception:
-            pass  # /sensors is optional — no crash if not available
+            pass
 
         time.sleep(POLL_INTERVAL)
 
 
 # ── Flask API ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-CORS(app)   # allow React dev server (localhost:5173) to fetch
+CORS(app, resources={r"/*": {"origins": "*"}})   # allow any dev-server origin
 
 
 @app.route("/sensordata")
 def sensordata():
-    """
-    JSON consumed by the React web app.
-    Shape:
-    {
-      x, y, theta,          — robot position & heading
-      front_dist,           — front ultrasonic (cm)
-      side_dist,            — side ultrasonic (cm)
-      shape,                — "CONCAVE SHAPE DETECTED" | "CONVEX SHAPE DETECTED" | ...
-      path: [{x,y}, ...],   — accumulated positions
-      is_complete,          — true once robot finished 360° sweep
-      connected,            — ESP32 reachable?
-      error                 — last error string | null
-    }
-    """
     with state_lock:
         return jsonify(dict(state))
 
 
 @app.route("/reset", methods=["GET", "POST"])
 def reset():
-    """Clear accumulated path and restart detection."""
     with state_lock:
         state["path"]        = []
         state["shape"]       = "INITIALIZING..."
@@ -218,15 +190,45 @@ def status():
         })
 
 
+@app.route("/health")
+def health():
+    """Simple health-check — visit http://localhost:5001/health in your browser."""
+    return jsonify({"ok": True, "port": PORT, "esp_ip": ESP_IP})
+
+
+# ── Port-availability check ───────────────────────────────────────────────────
+def check_port(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind(("0.0.0.0", port))
+            return True
+        except OSError:
+            return False
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    print("=" * 60)
+    print("  KINETIC SENTINEL — Bridge Server")
+    print("=" * 60)
+
+    if not check_port(PORT):
+        print(f"\n[ERROR] Port {PORT} is already in use!")
+        print(f"        Try: python bridge_server.py {ESP_IP} {PORT + 1}\n")
+        sys.exit(1)
+
     if WRITE_CSV:
         csv_init()
 
-    print(f"[bridge] Polling ESP32 at  http://{ESP_IP}/")
-    print(f"[bridge] Serving React app at  http://localhost:5000/sensordata")
+    print(f"\n  ESP32 target : http://{ESP_IP}/")
+    print(f"  API endpoint : http://localhost:{PORT}/sensordata")
+    print(f"  Health check : http://localhost:{PORT}/health")
+    print(f"  Poll interval: {POLL_INTERVAL}s")
+    print("\n  Open the health URL in your browser to confirm the server is up.")
+    print("  Press Ctrl+C to stop.\n")
+    print("=" * 60)
 
     t = threading.Thread(target=poll_esp, daemon=True)
     t.start()
 
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)

@@ -1,16 +1,14 @@
 import pandas as pd
 import numpy as np
 import cv2
-import numpy as np
 
 def draw_path(SIZE=1000, ipath='positions.csv', opath='path_traced.png'):
     data = pd.read_csv(ipath)
     x = data['x']
     y = data['y']
-    points = np.array(list(zip(x, y)))
+    points = np.array(list(zip(x, y)), dtype=np.int32)  # ← must be int32 for OpenCV
 
-    # generate a white blank canvas of (size, size) dimensions
-    img = np.full((SIZE, SIZE), fill_value=255, dtype=np.uint8) 
+    img = np.full((SIZE, SIZE), fill_value=255, dtype=np.uint8)
 
     cv2.polylines(img, [points], isClosed=True, color=0, thickness=4)
     cv2.fillPoly(img, [points], color=50)
