@@ -2,17 +2,10 @@
 bridge_server.py  —  Kinetic Sentinel Integration Bridge
 =========================================================
 Sits between the ESP32 robot (172.20.10.6) and the React web app.
-  • Polls the ESP32 for (x, y, theta) + sensor distances
+  • Polls the ESP32 for (x, y, theta)
   • Accumulates the robot's path
-  • Runs real-time concave-shape detection (same logic as is_concave.py)
+  • Runs real-time concave-shape detection
   • Serves a JSON API at http://localhost:5001/sensordata for the React app
-  • Optionally writes positions.csv (for compatibility with your Python scripts)
-
-Usage:
-    python bridge_server.py [ESP_IP] [PORT]
-
-    ESP_IP defaults to 172.20.10.6
-    PORT   defaults to 5001  (changed from 5000 to avoid macOS AirPlay conflict)
 """
 
 import sys
@@ -28,7 +21,7 @@ import requests
 from flask import Flask, jsonify
 from flask_cors import CORS
 
-# ── Config ────────────────────────────────────────────────────────────────────
+# ── Config ────────────────────────────────────────────────────────────
 ESP_IP          = sys.argv[1] if len(sys.argv) > 1 else "172.20.10.6"
 PORT            = int(sys.argv[2]) if len(sys.argv) > 2 else 5001
 POLL_INTERVAL   = 0.5          # seconds between ESP32 polls
@@ -41,8 +34,6 @@ state = {
     "x":          0,
     "y":          0,
     "theta":      0.0,
-    "front_dist": 0.0,
-    "side_dist":  0.0,
     "shape":      "INITIALIZING...",
     "path":       [],
     "is_complete": False,
@@ -51,7 +42,7 @@ state = {
 }
 state_lock = threading.Lock()
 
-# ── Concave detection ─────────────────────────────────────────────────────────
+# ── Concave detection ────────────────────────────────────────────────────────
 def is_concave_polygon(vertices):
     if len(vertices) < 4:
         return False
@@ -69,7 +60,6 @@ def is_concave_polygon(vertices):
             return True
     return False
 
-
 def detect_shape_from_path(path):
     if len(path) < 5:
         return "SCANNING..."
@@ -79,17 +69,14 @@ def detect_shape_from_path(path):
         return "CONCAVE SHAPE DETECTED"
     return "CONVEX SHAPE DETECTED"
 
-
-# ── CSV helpers ───────────────────────────────────────────────────────────────
+# ── CSV helpers ──────────────────────────────────────────────────────────
 def csv_init():
     with open(CSV_PATH, "w", newline="") as f:
         csv.DictWriter(f, ["x", "y"]).writeheader()
 
-
 def csv_append(x, y):
     with open(CSV_PATH, "a", newline="") as f:
         csv.DictWriter(f, ["x", "y"]).writerow({"x": x, "y": y})
-
 
 # ── Background polling thread ─────────────────────────────────────────────────
 def poll_esp():
@@ -102,8 +89,9 @@ def poll_esp():
             r.raise_for_status()
 
             parts = r.text.strip().split()
-            x     = int(parts[0])
-            y     = int(parts[1])
+            # Parse floats first, then int, since Arduino String(float) outputs decimals like "0.00"
+            x     = int(float(parts[0]))
+            y     = int(float(parts[1]))
             theta = float(parts[2])
 
             with state_lock:
@@ -133,36 +121,21 @@ def poll_esp():
             with state_lock:
                 state["connected"] = False
                 state["error"]     = "ESP32 unreachable"
-            # Only print once every ~10 s to avoid log spam
         except Exception as e:
             with state_lock:
                 state["connected"] = False
                 state["error"]     = str(e)
 
-        # Optional /sensors endpoint
-        try:
-            rs = requests.get(f"http://{ESP_IP}/sensors", timeout=1)
-            if rs.status_code == 200:
-                d = rs.json()
-                with state_lock:
-                    state["front_dist"] = d.get("front_dist", 0.0)
-                    state["side_dist"]  = d.get("side_dist",  0.0)
-        except Exception:
-            pass
-
         time.sleep(POLL_INTERVAL)
 
-
-# ── Flask API ─────────────────────────────────────────────────────────────────
+# ── Flask API ──────────────────────────────────────────────────────────
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})   # allow any dev-server origin
-
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 @app.route("/sensordata")
 def sensordata():
     with state_lock:
         return jsonify(dict(state))
-
 
 @app.route("/reset", methods=["GET", "POST"])
 def reset():
@@ -178,7 +151,6 @@ def reset():
     print("[bridge] State reset.")
     return jsonify({"status": "reset"})
 
-
 @app.route("/status")
 def status():
     with state_lock:
@@ -189,14 +161,10 @@ def status():
             "error":       state["error"],
         })
 
-
 @app.route("/health")
 def health():
-    """Simple health-check — visit http://localhost:5001/health in your browser."""
     return jsonify({"ok": True, "port": PORT, "esp_ip": ESP_IP})
 
-
-# ── Port-availability check ───────────────────────────────────────────────────
 def check_port(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         try:
@@ -205,28 +173,13 @@ def check_port(port):
         except OSError:
             return False
 
-
-# ── Entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("=" * 60)
-    print("  KINETIC SENTINEL — Bridge Server")
-    print("=" * 60)
-
     if not check_port(PORT):
         print(f"\n[ERROR] Port {PORT} is already in use!")
-        print(f"        Try: python bridge_server.py {ESP_IP} {PORT + 1}\n")
         sys.exit(1)
 
     if WRITE_CSV:
         csv_init()
-
-    print(f"\n  ESP32 target : http://{ESP_IP}/")
-    print(f"  API endpoint : http://localhost:{PORT}/sensordata")
-    print(f"  Health check : http://localhost:{PORT}/health")
-    print(f"  Poll interval: {POLL_INTERVAL}s")
-    print("\n  Open the health URL in your browser to confirm the server is up.")
-    print("  Press Ctrl+C to stop.\n")
-    print("=" * 60)
 
     t = threading.Thread(target=poll_esp, daemon=True)
     t.start()
