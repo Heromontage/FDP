@@ -6,7 +6,7 @@ import DiagnosticFeed from './components/DiagnosticFeed';
 import EnvironmentPanel from './components/EnvironmentPanel';
 import Footer from './components/Footer';
 
-// ── Config ────────────────────────────────────────────────────────────────────
+// ── Config ────────────────────────────────────────────────────────────
 // Port changed to 5001 — avoids macOS AirPlay conflict on port 5000.
 // Set DEMO_MODE = true if you want to preview the UI without the bridge running.
 const BRIDGE_URL    = 'http://localhost:5001/sensordata';
@@ -67,7 +67,7 @@ const DEMO_LOGS = [
   { message: 'MOTOR: Torque limited — terrain analysis mode', level: 'warning'},
 ];
 
-// ── App ───────────────────────────────────────────────────────────────────────
+// ── App ────────────────────────────────────────────────────────────
 export default function App() {
   const [sensorData, setSensorData] = useState({
     x: 0, y: 0, theta: 0,
@@ -90,7 +90,7 @@ export default function App() {
     setLogs((prev) => [{ time: t, message, level }, ...prev].slice(0, 80));
   }, []);
 
-  // ── Demo mode ───────────────────────────────────────────────────────────────
+  // ── Demo mode ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (!DEMO_MODE) return;
     addLog('SYSTEM: Demo mode active — run bridge_server.py to go live', 'info');
@@ -138,7 +138,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [addLog]);
 
-  // ── Live mode ───────────────────────────────────────────────────────────────
+  // ── Live mode ─────────────────────────────────────────────────────────
   const fetchLive = useCallback(async () => {
     if (DEMO_MODE) return;
     try {
@@ -178,7 +178,7 @@ export default function App() {
     return () => clearInterval(id);
   }, [fetchLive, addLog]);
 
-  // ── Reset handler ────────────────────────────────────────────────────────────
+  // ── Reset handler ────────────────────────────────────────────────────────
   const handleReset = useCallback(async () => {
     if (!DEMO_MODE) {
       try { await fetch(RESET_URL); } catch { /* ignore */ }
@@ -221,17 +221,17 @@ export default function App() {
           <div className="lg:col-span-3 flex flex-col gap-4 md:gap-6">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
               <SensorCard
-                label="Front Sensor"
-                value={sensorData.front_dist}
-                unit="cm"
-                max={50}
-                icon="sensors"
+                label="X Position"
+                value={sensorData.x}
+                unit="u"
+                max={500}
+                icon="straighten"
                 accentColor="secondary"
-                sublabel="FRONT DIST"
+                sublabel="X COORD"
                 delay={0}
               />
               <SensorCard
-                label="Heading"
+                label="Heading (Theta)"
                 value={sensorData.theta}
                 unit="°"
                 max={360}
@@ -243,13 +243,13 @@ export default function App() {
                 delay={100}
               />
               <SensorCard
-                label="Side Sensor"
-                value={sensorData.side_dist}
-                unit="cm"
-                max={30}
-                icon="sensors"
+                label="Y Position"
+                value={sensorData.y}
+                unit="u"
+                max={500}
+                icon="straighten"
                 accentColor="secondary"
-                sublabel="SIDE DIST"
+                sublabel="Y COORD"
                 delay={200}
               />
             </div>
@@ -339,12 +339,12 @@ function PathVisualizerPanel({ path, theta, isConcave, isComplete, onReset }) {
         </span>
         <button onClick={onReset}
           className="font-mono transition-all hover:scale-105 active:scale-95"
-          style={{ background: 'rgba(55,57,64,0.8)', backdropFilter: 'blur(8px)', border: '1px solid rgba(59,75,61,0.2)', padding: '5px 11px', borderRadius: '6px', fontSize: '9px', color: '#B9CBB9', cursor: 'pointer' }}>
+          style={{ background: 'rgba(55,57,64,0.8)', backdropFilter: 'blur(8px)', border: '1px solid rgba(59,75,61,0.2)', padding: '5px 11px', borderRadius: '6px', fontSize: '9px', color: '#B9CBB5', letterSpacing: '0.08em' }}>
           ↺ RESET
         </button>
         <button
           className="font-mono transition-all hover:scale-105 active:scale-95"
-          style={{ background: 'rgba(55,57,64,0.8)', backdropFilter: 'blur(8px)', border: '1px solid rgba(59,75,61,0.2)', padding: '5px 11px', borderRadius: '6px', fontSize: '9px', color: '#B9CBB9', cursor: 'pointer' }}>
+          style={{ background: 'rgba(55,57,64,0.8)', backdropFilter: 'blur(8px)', border: '1px solid rgba(59,75,61,0.2)', padding: '5px 11px', borderRadius: '6px', fontSize: '9px', color: '#B9CBB5', letterSpacing: '0.08em' }}>
           EXPORT CSV
         </button>
       </div>
