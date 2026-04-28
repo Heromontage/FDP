@@ -6,25 +6,22 @@ import DiagnosticFeed from './components/DiagnosticFeed';
 import EnvironmentPanel from './components/EnvironmentPanel';
 import Footer from './components/Footer';
 
-// ── Config ────────────────────────────────────────────────────────────
-// Port changed to 5001 — avoids macOS AirPlay conflict on port 5000.
-// Set DEMO_MODE = true if you want to preview the UI without the bridge running.
+// ── Config ────────────────────────────────────────────────────────────────────
 const BRIDGE_URL    = 'http://localhost:5001/sensordata';
 const RESET_URL     = 'http://localhost:5001/reset';
-const POLL_INTERVAL = 500; // ms
-const DEMO_MODE     = false; // ← set true to simulate data without bridge_server.py
+const POLL_INTERVAL = 500;
+const DEMO_MODE     = false;
 
-// ── Demo path generation ──────────────────────────────────────────────────────
+// ── Demo path generation (unchanged) ─────────────────────────────────────────
 function buildDemoPath(tick, shape) {
-  const pts = [];
+  const pts   = [];
   const steps = Math.min(tick * 2, 72);
-
   if (shape === 'CONCAVE SHAPE DETECTED') {
     for (let i = 0; i <= steps; i++) {
-      const deg = (i / 72) * 360;
-      const rad = (deg * Math.PI) / 180;
+      const deg  = (i / 72) * 360;
+      const rad  = (deg * Math.PI) / 180;
       const dent = deg > 100 && deg < 180;
-      const r = dent ? 22 : 44;
+      const r    = dent ? 22 : 44;
       pts.push({ x: Math.round(50 + r * Math.cos(rad)), y: Math.round(50 + r * Math.sin(rad)) });
     }
   } else if (shape === 'CONVEX SHAPE DETECTED') {
@@ -34,14 +31,12 @@ function buildDemoPath(tick, shape) {
     }
   } else {
     const side = Math.min(steps, 18);
-    const rect = [
-      { x: 18, y: 18 }, { x: 82, y: 18 }, { x: 82, y: 82 }, { x: 18, y: 82 },
-    ];
+    const rect = [{ x: 18, y: 18 }, { x: 82, y: 18 }, { x: 82, y: 82 }, { x: 18, y: 82 }];
     for (let i = 0; i <= side; i++) {
-      const seg = Math.floor((i / 18) * 4);
+      const seg  = Math.floor((i / 18) * 4);
       const frac = ((i / 18) * 4) - seg;
-      const a = rect[seg % 4];
-      const b = rect[(seg + 1) % 4];
+      const a    = rect[seg % 4];
+      const b    = rect[(seg + 1) % 4];
       pts.push({ x: Math.round(a.x + frac * (b.x - a.x)), y: Math.round(a.y + frac * (b.y - a.y)) });
     }
   }
@@ -49,29 +44,33 @@ function buildDemoPath(tick, shape) {
 }
 
 const DEMO_STAGES = [
-  { shape: 'CONCAVE SHAPE DETECTED', ticks: 40, frontDist: 14, sideDist: 7,  theta: 0   },
-  { shape: 'CONVEX SHAPE DETECTED',  ticks: 40, frontDist: 22, sideDist: 9,  theta: 90  },
-  { shape: 'FLAT SURFACE',           ticks: 20, frontDist: 30, sideDist: 11, theta: 180 },
+  { shape: 'CONCAVE SHAPE DETECTED', ticks: 40, frontDist: 14, sideFront: 7,  sideBack: 8,  theta: 0  },
+  { shape: 'CONVEX SHAPE DETECTED',  ticks: 40, frontDist: 22, sideFront: 9,  sideBack: 10, theta: 90 },
+  { shape: 'FLAT SURFACE',           ticks: 20, frontDist: 30, sideFront: 11, sideBack: 12, theta: 180},
 ];
 
 const DEMO_LOGS = [
-  { message: 'ESP32: Position update received (x=34, y=18)', level: 'info'    },
-  { message: 'SHAPE: Concave geometry confirmed via path analysis', level: 'success' },
-  { message: 'DRIVE: Velocity adjusted — side wall detected', level: 'info'   },
-  { message: 'PATH: 24 waypoints accumulated', level: 'info'                  },
-  { message: 'IMU: Gyro offset corrected (+0.02 rad/s)', level: 'info'        },
-  { message: 'SYSTEM: Proximity alert — front obstacle 14 cm', level: 'error' },
-  { message: 'DRIVE: Turning right — side > 10 cm', level: 'warning'          },
-  { message: 'SHAPE: Classification confidence 94.7 %', level: 'success'      },
-  { message: 'SENSOR: Front ultrasonic nominal', level: 'info'                },
-  { message: 'MOTOR: Torque limited — terrain analysis mode', level: 'warning'},
+  { message: 'ESP32: Position update received',           level: 'info'    },
+  { message: 'SHAPE: Concave geometry confirmed',         level: 'success' },
+  { message: 'DRIVE: Velocity adjusted — wall detected',  level: 'info'    },
+  { message: 'PATH: 24 waypoints accumulated',            level: 'info'    },
+  { message: 'IMU: Gyro offset corrected (+0.02 rad/s)',  level: 'info'    },
+  { message: 'SYSTEM: Proximity alert — 14 cm ahead',     level: 'error'   },
+  { message: 'DRIVE: Turning right — side > 10 cm',       level: 'warning' },
+  { message: 'SHAPE: Classification confidence 94.7%',    level: 'success' },
+  { message: 'SENSOR: Front ultrasonic nominal',          level: 'info'    },
+  { message: 'MOTOR: Torque limited — terrain mode',      level: 'warning' },
 ];
 
-// ── App ────────────────────────────────────────────────────────────
+// ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [sensorData, setSensorData] = useState({
     x: 0, y: 0, theta: 0,
-    front_dist: 0, side_dist: 0,
+    // ── NEW: three sensor distances ──
+    front_dist:      0,
+    side_front_dist: 0,
+    side_back_dist:  0,
+    // ────────────────────────────────
     shape: 'INITIALIZING...',
     path: [],
     is_complete: false,
@@ -87,44 +86,38 @@ export default function App() {
 
   const addLog = useCallback((message, level = 'info') => {
     const t = new Date().toLocaleTimeString('en-US', { hour12: false });
-    setLogs((prev) => [{ time: t, message, level }, ...prev].slice(0, 80));
+    setLogs(prev => [{ time: t, message, level }, ...prev].slice(0, 80));
   }, []);
 
-  // ── Demo mode ──────────────────────────────────────────────────────────
+  // ── Demo mode ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!DEMO_MODE) return;
     addLog('SYSTEM: Demo mode active — run bridge_server.py to go live', 'info');
-    addLog('SYSTEM: Simulating ESP32 path-trace telemetry', 'info');
-    setTimeout(() => addLog('SENSOR: Front & side ultrasonics online', 'success'), 700);
-    setTimeout(() => addLog(`BRIDGE: Polling http://172.20.10.6/ every ${POLL_INTERVAL} ms`, 'info'), 1400);
+    setTimeout(() => addLog('SENSOR: All ultrasonics online', 'success'), 700);
 
     const interval = setInterval(() => {
       demoTickRef.current += 1;
       const stage = DEMO_STAGES[demoStageRef.current];
-
       if (demoTickRef.current > stage.ticks) {
         demoTickRef.current = 0;
         demoStageRef.current = (demoStageRef.current + 1) % DEMO_STAGES.length;
       }
-
-      const tick       = demoTickRef.current;
-      const path       = buildDemoPath(tick, stage.shape);
-      const theta      = (tick / stage.ticks) * 360;
-      const frontNoise = stage.frontDist + (Math.random() - 0.5) * 2;
-      const sideNoise  = stage.sideDist  + (Math.random() - 0.5) * 1.5;
-      const xPos       = path.length ? path[path.length - 1].x : 50;
-      const yPos       = path.length ? path[path.length - 1].y : 50;
+      const tick   = demoTickRef.current;
+      const path   = buildDemoPath(tick, stage.shape);
+      const theta  = (tick / stage.ticks) * 360;
+      const noise  = () => (Math.random() - 0.5) * 2;
 
       setSensorData({
-        x:          Math.round(xPos),
-        y:          Math.round(yPos),
-        theta:      +theta.toFixed(1),
-        front_dist: +frontNoise.toFixed(1),
-        side_dist:  +sideNoise.toFixed(1),
-        shape:      tick > 5 ? stage.shape : 'SCANNING...',
+        x:               path.length ? path[path.length - 1].x : 50,
+        y:               path.length ? path[path.length - 1].y : 50,
+        theta:           +theta.toFixed(1),
+        front_dist:      +(stage.frontDist + noise()).toFixed(1),
+        side_front_dist: +(stage.sideFront + noise()).toFixed(1),
+        side_back_dist:  +(stage.sideBack  + noise()).toFixed(1),
+        shape:           tick > 5 ? stage.shape : 'SCANNING...',
         path,
-        is_complete: theta >= 355,
-        connected:  true,
+        is_complete:     theta >= 355,
+        connected:       true,
       });
       setConnectionStatus('Demo');
       setLastUpdated(new Date());
@@ -138,7 +131,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [addLog]);
 
-  // ── Live mode ─────────────────────────────────────────────────────────
+  // ── Live mode ──────────────────────────────────────────────────────────────
   const fetchLive = useCallback(async () => {
     if (DEMO_MODE) return;
     try {
@@ -146,10 +139,15 @@ export default function App() {
       const tid  = setTimeout(() => ctrl.abort(), 2500);
       const res  = await fetch(BRIDGE_URL, { signal: ctrl.signal });
       clearTimeout(tid);
-
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
+
+      // Back-fill sensor distances to 0 if old bridge server is running
+      data.front_dist      = data.front_dist      ?? 0;
+      data.side_front_dist = data.side_front_dist ?? 0;
+      data.side_back_dist  = data.side_back_dist  ?? 0;
+
       setSensorData(data);
       setBridgeError(null);
       setConnectionStatus(data.connected ? 'Connected' : 'Polling...');
@@ -159,7 +157,11 @@ export default function App() {
         addLog(`SHAPE: ${data.shape}`, 'success');
       if (data.error && data.error !== 'ESP32 unreachable')
         addLog(`ESP32 ERROR: ${data.error}`, 'error');
-
+      // Warn in logs when sensors look disconnected
+      if (data.side_front_dist >= 390)
+        addLog('SENSOR: Side-front returning max range — check wiring (GPIO 22)', 'warning');
+      if (data.side_back_dist >= 390)
+        addLog('SENSOR: Side-back returning max range — check wiring (GPIO 23)', 'warning');
     } catch (err) {
       const msg = err.name === 'AbortError'
         ? 'Bridge request timed out'
@@ -178,14 +180,18 @@ export default function App() {
     return () => clearInterval(id);
   }, [fetchLive, addLog]);
 
-  // ── Reset handler ────────────────────────────────────────────────────────
+  // ── Reset ──────────────────────────────────────────────────────────────────
   const handleReset = useCallback(async () => {
     if (!DEMO_MODE) {
       try { await fetch(RESET_URL); } catch { /* ignore */ }
     }
     demoTickRef.current  = 0;
     demoStageRef.current = 0;
-    setSensorData(s => ({ ...s, path: [], shape: 'INITIALIZING...', is_complete: false }));
+    setSensorData(s => ({
+      ...s,
+      path: [], shape: 'INITIALIZING...', is_complete: false,
+      front_dist: 0, side_front_dist: 0, side_back_dist: 0,
+    }));
     addLog('SYSTEM: Path reset — new scan started', 'warning');
   }, [addLog]);
 
@@ -195,7 +201,6 @@ export default function App() {
     <div className="min-h-screen" style={{ background: '#0C0E14' }}>
       <Header connectionStatus={connectionStatus} />
 
-      {/* Bridge-not-running banner */}
       {!DEMO_MODE && bridgeError && (
         <div
           className="mx-4 md:mx-8 mt-4 px-4 py-3 rounded-lg font-mono flex items-start gap-3"
@@ -217,8 +222,45 @@ export default function App() {
         <ShapeAlert shape={sensorData.shape} isConcave={isConcave} lastUpdated={lastUpdated} />
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 md:gap-6 xl:gap-8">
-          {/* Left: sensor cards + path visualizer */}
           <div className="lg:col-span-3 flex flex-col gap-4 md:gap-6">
+
+            {/* ── Row 1: the three SENSOR DISTANCES ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
+              <SensorCard
+                label="Side Front"
+                value={sensorData.side_front_dist}
+                unit="cm"
+                max={80}
+                icon="sensors"
+                accentColor="secondary"
+                sublabel="FR SENSOR"
+                delay={0}
+              />
+              <SensorCard
+                label="Front"
+                value={sensorData.front_dist}
+                unit="cm"
+                max={100}
+                icon="radar"
+                iconFill
+                accentColor="primary"
+                isCenter
+                sublabel="FRONT SENSOR"
+                delay={100}
+              />
+              <SensorCard
+                label="Side Back"
+                value={sensorData.side_back_dist}
+                unit="cm"
+                max={80}
+                icon="sensors"
+                accentColor="secondary"
+                sublabel="BR SENSOR"
+                delay={200}
+              />
+            </div>
+
+            {/* ── Row 2: odometry values ── */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
               <SensorCard
                 label="X Position"
@@ -228,10 +270,10 @@ export default function App() {
                 icon="straighten"
                 accentColor="secondary"
                 sublabel="X COORD"
-                delay={0}
+                delay={300}
               />
               <SensorCard
-                label="Heading (Theta)"
+                label="Heading θ"
                 value={sensorData.theta}
                 unit="°"
                 max={360}
@@ -240,7 +282,7 @@ export default function App() {
                 accentColor="primary"
                 isCenter
                 sublabel="θ ROTATION"
-                delay={100}
+                delay={400}
               />
               <SensorCard
                 label="Y Position"
@@ -250,7 +292,7 @@ export default function App() {
                 icon="straighten"
                 accentColor="secondary"
                 sublabel="Y COORD"
-                delay={200}
+                delay={500}
               />
             </div>
 
@@ -263,9 +305,14 @@ export default function App() {
             />
           </div>
 
-          {/* Right: env + logs */}
           <div className="flex flex-col gap-4 md:gap-6">
-            <RobotPositionPanel x={sensorData.x} y={sensorData.y} theta={sensorData.theta} />
+            <RobotPositionPanel
+              x={sensorData.x}
+              y={sensorData.y}
+              theta={sensorData.theta}
+              sideFront={sensorData.side_front_dist}
+              sideBack={sensorData.side_back_dist}
+            />
             <EnvironmentPanel />
             <DiagnosticFeed logs={logs} />
           </div>
@@ -277,19 +324,21 @@ export default function App() {
   );
 }
 
-// ── Robot Position mini-panel ─────────────────────────────────────────────────
-function RobotPositionPanel({ x, y, theta }) {
+// ── Robot Position mini-panel (now includes sensor distances) ─────────────────
+function RobotPositionPanel({ x, y, theta, sideFront, sideBack }) {
   const items = [
-    { label: 'X POS',  value: x,     unit: 'u', color: '#00FF88' },
-    { label: 'Y POS',  value: y,     unit: 'u', color: '#00D2FD' },
-    { label: 'θ HEAD', value: theta, unit: '°', color: '#FFBA20' },
+    { label: 'X POS',      value: x,         unit: 'u',  color: '#00FF88' },
+    { label: 'Y POS',      value: y,         unit: 'u',  color: '#00D2FD' },
+    { label: 'θ HEAD',     value: theta,     unit: '°',  color: '#FFBA20' },
+    { label: 'SIDE FRONT', value: sideFront, unit: 'cm', color: sideFront > 0 && sideFront < 390 ? '#00D2FD' : '#FFB4AB' },
+    { label: 'SIDE BACK',  value: sideBack,  unit: 'cm', color: sideBack  > 0 && sideBack  < 390 ? '#00D2FD' : '#FFB4AB' },
   ];
   return (
     <div className="rounded-xl animate-fade-in-up"
       style={{ background: '#1E1F26', border: '1px solid rgba(59,75,61,0.12)', padding: '1.25rem' }}>
       <h3 className="font-headline uppercase font-semibold mb-3"
         style={{ fontSize: '9px', letterSpacing: '0.2em', color: '#849585' }}>
-        Robot Position
+        Robot State
       </h3>
       <div className="space-y-2.5">
         {items.map(({ label, value, unit, color }) => (
@@ -308,18 +357,14 @@ function RobotPositionPanel({ x, y, theta }) {
   );
 }
 
-// ── Path Visualizer Panel ─────────────────────────────────────────────────────
+// ── Path Visualizer Panel (unchanged logic, just forwarded) ───────────────────
 function PathVisualizerPanel({ path, theta, isConcave, isComplete, onReset }) {
   const glowColor = isConcave ? '#00FF88' : '#3CD7FF';
-
   return (
     <div className="glass-panel rounded-xl overflow-hidden relative animate-fade-in-up"
-      style={{ minHeight: '22rem', border: '1px solid rgba(59,75,61,0.12)', animationDelay: '300ms' }}>
-      <div className="absolute inset-0 pointer-events-none z-10"
-        style={{ background: 'rgba(12,14,20,0.35)' }} />
-      <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
-        <div className="scan-line" />
-      </div>
+      style={{ minHeight: '22rem', border: '1px solid rgba(59,75,61,0.12)', animationDelay: '600ms' }}>
+      <div className="absolute inset-0 pointer-events-none z-10" style={{ background: 'rgba(12,14,20,0.35)' }} />
+      <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden"><div className="scan-line" /></div>
 
       <div className="absolute top-4 left-4 md:top-6 md:left-6 z-20">
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
@@ -334,18 +379,11 @@ function PathVisualizerPanel({ path, theta, isConcave, isComplete, onReset }) {
       </div>
 
       <div className="absolute bottom-4 right-4 md:bottom-6 md:right-6 z-20 flex gap-2">
-        <span className="font-mono" style={{ fontSize: '9px', color: '#849585', alignSelf: 'center' }}>
-          {path.length} pts
-        </span>
+        <span className="font-mono" style={{ fontSize: '9px', color: '#849585', alignSelf: 'center' }}>{path.length} pts</span>
         <button onClick={onReset}
           className="font-mono transition-all hover:scale-105 active:scale-95"
           style={{ background: 'rgba(55,57,64,0.8)', backdropFilter: 'blur(8px)', border: '1px solid rgba(59,75,61,0.2)', padding: '5px 11px', borderRadius: '6px', fontSize: '9px', color: '#B9CBB5', letterSpacing: '0.08em' }}>
           ↺ RESET
-        </button>
-        <button
-          className="font-mono transition-all hover:scale-105 active:scale-95"
-          style={{ background: 'rgba(55,57,64,0.8)', backdropFilter: 'blur(8px)', border: '1px solid rgba(59,75,61,0.2)', padding: '5px 11px', borderRadius: '6px', fontSize: '9px', color: '#B9CBB5', letterSpacing: '0.08em' }}>
-          EXPORT CSV
         </button>
       </div>
 
@@ -356,146 +394,94 @@ function PathVisualizerPanel({ path, theta, isConcave, isComplete, onReset }) {
   );
 }
 
-// ── Path Visualization SVG ────────────────────────────────────────────────────
+// ── Path Visualization SVG (unchanged from original) ─────────────────────────
 function PathVisualization({ path, theta, isConcave, isComplete }) {
-  const W = 600, H = 300;
-  const PAD = 40;
+  const W = 600, H = 300, PAD = 40;
   const glowColor = isConcave ? '#00FF88' : '#3CD7FF';
 
   let scaledPoints = [];
   let robotX = W / 2, robotY = H / 2;
 
   if (path && path.length > 1) {
-    const xs = path.map(p => p.x);
-    const ys = path.map(p => p.y);
+    const xs = path.map(p => p.x), ys = path.map(p => p.y);
     const minX = Math.min(...xs), maxX = Math.max(...xs);
     const minY = Math.min(...ys), maxY = Math.max(...ys);
-    const rangeX = maxX - minX || 1;
-    const rangeY = maxY - minY || 1;
-    const scaleX = (W - PAD * 2) / rangeX;
-    const scaleY = (H - PAD * 2) / rangeY;
-    const scale  = Math.min(scaleX, scaleY);
-
+    const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1;
+    const scale  = Math.min((W - PAD * 2) / rangeX, (H - PAD * 2) / rangeY);
     scaledPoints = path.map(p => ({
       x: PAD + (p.x - minX) * scale + (W - PAD * 2 - rangeX * scale) / 2,
       y: PAD + (p.y - minY) * scale + (H - PAD * 2 - rangeY * scale) / 2,
     }));
-
     if (scaledPoints.length > 0) {
       const last = scaledPoints[scaledPoints.length - 1];
-      robotX = last.x;
-      robotY = last.y;
+      robotX = last.x; robotY = last.y;
     }
   }
 
-  const polyline = scaledPoints.map(p => `${p.x},${p.y}`).join(' ');
-  const progress = Math.min((theta / 360) * 100, 100);
-  const robotAngle = (theta * Math.PI) / 180;
-  const arrowDx = 12 * Math.cos(robotAngle);
-  const arrowDy = 12 * Math.sin(robotAngle);
+  const polyline    = scaledPoints.map(p => `${p.x},${p.y}`).join(' ');
+  const progress    = Math.min((theta / 360) * 100, 100);
+  const robotAngle  = (theta * Math.PI) / 180;
+  const arrowDx     = 12 * Math.cos(robotAngle);
+  const arrowDy     = 12 * Math.sin(robotAngle);
 
   return (
     <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="100%" style={{ maxHeight: '320px' }}>
       <defs>
-        <filter id="pathGlow">
-          <feGaussianBlur stdDeviation="4" result="coloredBlur" />
-          <feMerge><feMergeNode in="coloredBlur" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
+        <filter id="pathGlow"><feGaussianBlur stdDeviation="4" result="coloredBlur"/><feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
         <linearGradient id="pathGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#00E479" />
-          <stop offset="50%" stopColor={glowColor} />
-          <stop offset="100%" stopColor="#00D2FD" />
+          <stop offset="0%" stopColor="#00E479"/><stop offset="50%" stopColor={glowColor}/><stop offset="100%" stopColor="#00D2FD"/>
         </linearGradient>
         <marker id="arrow" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" fill={glowColor} opacity="0.7" />
+          <path d="M0,0 L6,3 L0,6 Z" fill={glowColor} opacity="0.7"/>
         </marker>
       </defs>
-
-      {[0, 1, 2, 3, 4].map(i => (
+      {[0,1,2,3,4].map(i => (
         <g key={i}>
-          <line x1={PAD + i * (W - PAD * 2) / 4} y1={PAD} x2={PAD + i * (W - PAD * 2) / 4} y2={H - PAD}
-            stroke="#3B4B3D" strokeWidth="0.5" strokeDasharray="4,8" opacity="0.3" />
-          <line x1={PAD} y1={PAD + i * (H - PAD * 2) / 4} x2={W - PAD} y2={PAD + i * (H - PAD * 2) / 4}
-            stroke="#3B4B3D" strokeWidth="0.5" strokeDasharray="4,8" opacity="0.3" />
+          <line x1={PAD+i*(W-PAD*2)/4} y1={PAD} x2={PAD+i*(W-PAD*2)/4} y2={H-PAD} stroke="#3B4B3D" strokeWidth="0.5" strokeDasharray="4,8" opacity="0.3"/>
+          <line x1={PAD} y1={PAD+i*(H-PAD*2)/4} x2={W-PAD} y2={PAD+i*(H-PAD*2)/4} stroke="#3B4B3D" strokeWidth="0.5" strokeDasharray="4,8" opacity="0.3"/>
         </g>
       ))}
-
       {path.length === 0 && (
         <>
-          <text x={W / 2} y={H / 2 - 12} fill="#3B4B3D" fontSize="13" fontFamily="monospace"
-            textAnchor="middle">AWAITING ROBOT PATH DATA</text>
-          <text x={W / 2} y={H / 2 + 10} fill="#2A2C33" fontSize="9" fontFamily="monospace"
-            textAnchor="middle">Start bridge_server.py and power on the ESP32</text>
+          <text x={W/2} y={H/2-12} fill="#3B4B3D" fontSize="13" fontFamily="monospace" textAnchor="middle">AWAITING ROBOT PATH DATA</text>
+          <text x={W/2} y={H/2+10} fill="#2A2C33" fontSize="9" fontFamily="monospace" textAnchor="middle">Start bridge_server.py and power on the ESP32</text>
         </>
       )}
-
-      {scaledPoints.length > 2 && (
-        <polyline points={polyline} fill="none"
-          stroke={glowColor} strokeWidth="1" opacity="0.2" strokeLinejoin="round" />
-      )}
-      {scaledPoints.length > 2 && (
-        <polyline points={polyline} fill="none"
-          stroke="url(#pathGrad)" strokeWidth="2.5"
-          filter="url(#pathGlow)" strokeLinejoin="round"
-          strokeLinecap="round"
-          markerEnd="url(#arrow)" />
-      )}
-
-      {scaledPoints.filter((_, i) => i % 8 === 0 && i > 0).map((pt, i) => (
-        <circle key={i} cx={pt.x} cy={pt.y} r="2" fill={glowColor} opacity="0.4" />
-      ))}
-
+      {scaledPoints.length > 2 && <polyline points={polyline} fill="none" stroke={glowColor} strokeWidth="1" opacity="0.2" strokeLinejoin="round"/>}
+      {scaledPoints.length > 2 && <polyline points={polyline} fill="none" stroke="url(#pathGrad)" strokeWidth="2.5" filter="url(#pathGlow)" strokeLinejoin="round" strokeLinecap="round" markerEnd="url(#arrow)"/>}
+      {scaledPoints.filter((_,i) => i % 8 === 0 && i > 0).map((pt,i) => <circle key={i} cx={pt.x} cy={pt.y} r="2" fill={glowColor} opacity="0.4"/>)}
       {scaledPoints.length > 0 && (
         <g>
-          <circle cx={scaledPoints[0].x} cy={scaledPoints[0].y} r="7"
-            fill="rgba(0,255,136,0.12)" stroke="#00FF88" strokeWidth="1.5" />
-          <text x={scaledPoints[0].x} y={scaledPoints[0].y - 12}
-            fill="#849585" fontSize="8" fontFamily="monospace" textAnchor="middle">START</text>
+          <circle cx={scaledPoints[0].x} cy={scaledPoints[0].y} r="7" fill="rgba(0,255,136,0.12)" stroke="#00FF88" strokeWidth="1.5"/>
+          <text x={scaledPoints[0].x} y={scaledPoints[0].y-12} fill="#849585" fontSize="8" fontFamily="monospace" textAnchor="middle">START</text>
         </g>
       )}
-
       {scaledPoints.length > 0 && !isComplete && (
         <g>
-          <circle cx={robotX} cy={robotY} r="14" fill={glowColor} opacity="0.08" />
-          <circle cx={robotX} cy={robotY} r="6" fill={glowColor} filter="url(#pathGlow)" />
-          <circle cx={robotX} cy={robotY} r="3" fill="#FFFFFF" />
-          <line x1={robotX} y1={robotY} x2={robotX + arrowDx} y2={robotY + arrowDy}
-            stroke={glowColor} strokeWidth="2" opacity="0.8" />
+          <circle cx={robotX} cy={robotY} r="14" fill={glowColor} opacity="0.08"/>
+          <circle cx={robotX} cy={robotY} r="6" fill={glowColor} filter="url(#pathGlow)"/>
+          <circle cx={robotX} cy={robotY} r="3" fill="#FFFFFF"/>
+          <line x1={robotX} y1={robotY} x2={robotX+arrowDx} y2={robotY+arrowDy} stroke={glowColor} strokeWidth="2" opacity="0.8"/>
         </g>
       )}
-
       {isComplete && scaledPoints.length > 2 && (
         <>
-          <polyline
-            points={[...scaledPoints, scaledPoints[0]].map(p => `${p.x},${p.y}`).join(' ')}
-            fill={isConcave ? 'rgba(0,255,136,0.06)' : 'rgba(0,210,253,0.06)'}
-            stroke="none" />
-          <text x={W / 2} y={H - 10} fill={glowColor} fontSize="10" fontFamily="'Space Grotesk', sans-serif"
-            textAnchor="middle" letterSpacing="0.15em" opacity="0.7">
-            SCAN COMPLETE
-          </text>
+          <polyline points={[...scaledPoints, scaledPoints[0]].map(p=>`${p.x},${p.y}`).join(' ')} fill={isConcave ? 'rgba(0,255,136,0.06)' : 'rgba(0,210,253,0.06)'} stroke="none"/>
+          <text x={W/2} y={H-10} fill={glowColor} fontSize="10" fontFamily="'Space Grotesk', sans-serif" textAnchor="middle" letterSpacing="0.15em" opacity="0.7">SCAN COMPLETE</text>
         </>
       )}
-
       {(() => {
-        const cx = W - 50, cy = 42, r = 22;
-        const angle = Math.min((theta / 360) * 2 * Math.PI, 2 * Math.PI * 0.999);
-        const ex = cx + r * Math.cos(-Math.PI / 2 + angle);
-        const ey = cy + r * Math.sin(-Math.PI / 2 + angle);
+        const cx = W-50, cy = 42, r = 22;
+        const angle = Math.min((theta/360)*2*Math.PI, 2*Math.PI*0.999);
+        const ex = cx + r*Math.cos(-Math.PI/2+angle);
+        const ey = cy + r*Math.sin(-Math.PI/2+angle);
         const large = angle > Math.PI ? 1 : 0;
         return (
           <g>
-            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1E1F26" strokeWidth="4" />
-            {theta > 1 && (
-              <path
-                d={`M ${cx} ${cy - r} A ${r} ${r} 0 ${large} 1 ${ex} ${ey}`}
-                fill="none" stroke={glowColor} strokeWidth="4" strokeLinecap="round"
-                filter="url(#pathGlow)" />
-            )}
-            <text x={cx} y={cy + 4} fill={glowColor} fontSize="9" fontFamily="monospace"
-              textAnchor="middle" fontWeight="700">{Math.round(progress)}%</text>
-            <text x={cx} y={cy + 18} fill="#849585" fontSize="7" fontFamily="monospace"
-              textAnchor="middle">SWEEP</text>
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke="#1E1F26" strokeWidth="4"/>
+            {theta > 1 && <path d={`M ${cx} ${cy-r} A ${r} ${r} 0 ${large} 1 ${ex} ${ey}`} fill="none" stroke={glowColor} strokeWidth="4" strokeLinecap="round" filter="url(#pathGlow)"/>}
+            <text x={cx} y={cy+4} fill={glowColor} fontSize="9" fontFamily="monospace" textAnchor="middle" fontWeight="700">{Math.round(progress)}%</text>
+            <text x={cx} y={cy+18} fill="#849585" fontSize="7" fontFamily="monospace" textAnchor="middle">SWEEP</text>
           </g>
         );
       })()}
