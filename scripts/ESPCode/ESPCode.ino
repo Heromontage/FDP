@@ -9,176 +9,299 @@ const char* ssid = "Mehul’s iPhone";
 const char* password = "mahi2604";
 WebServer server(80);
 
-// --- Pinout (No Changes) ---A
+// --- Pins ---
+const int trigFR = 5, echoFR = 17;
+const int trigMR = 18, echoMR = 19;
+const int trigF  = 16, echoF  = 4;
+
 const int ENA = 14, IN1 = 27, IN2 = 26;
 const int ENB = 32, IN3 = 25, IN4 = 33;
-const int trigFR = 5, echoFR = 17;
-const int trigBR = 18, echoBR = 19;
-const int trigF = 16, echoF = 4;
 
-// --- STATE MACHINE (No Changes) ---
+const int led = 2;
+
+// --- State ---
 bool isRunning = false;
-char statusMsg[40] = "System Idle";
-enum State { FOLLOWING, DRIVE_PAST, PIVOT_RIGHT, STOPPED };
-State currentState = STOPPED;
+bool concaveDetected = false;
+char statusMsg[25] = "IDLE";
 
-// --- TELEMETRY ---
-float frFilt = 15.0, brFilt = 15.0;
-float prevAngErr = 0, prevDistErr = 0;
-int curL = 0, curR = 0;
-unsigned long stateTimer = 0;
-bool sensorToggle = true;
+// --- Sensors ---
+float fr = 0, mr = 0, f = 0;
 
-// --- TUNABLE PARAMETERS (Exposed) ---
-float Kpa = 5.0, Kda = 2.0;    
-float Kpd = 10.0, Kdd = 1.0;   
-int bSpd = 180, pSpd = 170;    
-int ramp = 35;                 
-float tDist = 15.0;            
-float cThr = 35.0;             
-float eThr = 20.0;             
-int pTime = 1800;              
-float alp = 0.3;               
-float sLim = 10.0;             
+// --- Tunable params ---
+float targetMin = 6.0;
+float targetMax = 10.0;
+float angularVel = 0.34;
+float targetAngle = 1500.0;
+float concaveThreshold = 8.0;
 
-// ---------------- POWER ----------------
-void drive(int left, int right) {
-  if (!isRunning) { left = 0; right = 0; }
-  if (left > curL) curL += min(ramp, left - curL);
-  else if (left < curL) curL -= min(ramp, curL - left);
-  if (right > curR) curR += min(ramp, right - curR);
-  else if (right < curR) curR -= min(ramp, curR - right);
+int followSpeed = 180;
+int turnOuter = 180;
+int turnInner = 120;
 
-  digitalWrite(IN1, curL >= 0 ? HIGH : LOW);
-  digitalWrite(IN2, curL >= 0 ? LOW : HIGH);
-  digitalWrite(IN3, curR >= 0 ? HIGH : LOW);
-  digitalWrite(IN4, curR >= 0 ? LOW : HIGH);
-  ledcWrite(ENA, abs(curL));
-  ledcWrite(ENB, abs(curR));
+float theta = 0;
+unsigned long turnStart = 0;
+
+// ---------------- HARD BRAKE ----------------
+void hardStop() {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, HIGH);
+  ledcWrite(ENA, 0);
+  ledcWrite(ENB, 0);
 }
 
-// ---------------- SENSORS ----------------
-float getDist(int trig, int echo) {
-  digitalWrite(trig, LOW); delayMicroseconds(2);
-  digitalWrite(trig, HIGH); delayMicroseconds(10);
-  digitalWrite(trig, LOW);
-  long dur = pulseIn(echo, HIGH, 18000); 
-  float d = (dur <= 0) ? 400.0 : (dur * 0.034 / 2);
-  return d;
+// ---------------- DRIVE ----------------
+void drive(int L, int R) {
+  if (!isRunning) { hardStop(); return; }
+
+  int temp = L; L = R; R = temp;
+
+  digitalWrite(IN1, L >= 0);
+  digitalWrite(IN2, L < 0);
+  digitalWrite(IN3, R >= 0);
+  digitalWrite(IN4, R < 0);
+
+  ledcWrite(ENA, abs(L));
+  ledcWrite(ENB, abs(R));
 }
 
-void updateSensors() {
-  float r = sensorToggle ? getDist(trigFR, echoFR) : getDist(trigBR, echoBR);
-  if (isRunning && r < sLim) { isRunning = false; strncpy(statusMsg, "SAFETY STOP", 40); }
-  if (sensorToggle) frFilt = (alp * r) + ((1.0 - alp) * frFilt);
-  else brFilt = (alp * r) + ((1.0 - alp) * brFilt);
-  sensorToggle = !sensorToggle;
+// ---------------- SENSOR ----------------
+float getDist(int t, int e) {
+  digitalWrite(t, LOW); delayMicroseconds(2);
+  digitalWrite(t, HIGH); delayMicroseconds(10);
+  digitalWrite(t, LOW);
+  long d = pulseIn(e, HIGH, 18000);
+  return (d <= 0) ? 400 : d * 0.034 / 2;
 }
 
-// ---------------- LOGIC ----------------
-void runPID() {
-  float aErr = frFilt - brFilt;
-  float dErr = ((frFilt + brFilt) / 2.0) - tDist;
-  float corr = (Kpa * aErr) + (Kda * (aErr - prevAngErr)) + (Kpd * dErr);
-  prevAngErr = aErr;
-  int turn = constrain((int)corr, -90, 90);
-  drive(bSpd - turn, bSpd + turn);
-}
-
-// --- UPDATED UI: NOW SHOWS FR AND BR DISTANCES ---
-const char INDEX_HTML[] PROGMEM = R"rawliteral(
-<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+// ---------------- MAIN UI ----------------
+const char PAGE[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  body{font-family:sans-serif;background:#0f172a;color:#fff;text-align:center;margin:0;}
-  .telemetry{background:#1e293b;padding:15px;border-bottom:2px solid #334155;display:flex;justify-content:space-around;font-weight:bold;color:#10b981;font-size:1.2em;}
-  .grid{display:flex;flex-wrap:wrap;justify-content:center;}
-  .card{background:#1e293b;padding:15px;margin:5px;border-radius:10px;border:1px solid #334155;width:180px;}
-  input{width:100%;margin-top:10px;} label{font-size:12px;color:#94a3b8;}
-  .btn{padding:15px;width:45%;margin:10px;font-weight:bold;border-radius:8px;border:none;cursor:pointer;}
-</style></head><body>
-  <div class="telemetry">
-    <div>FR: <span id="v_fr">0.0</span></div>
-    <div>BR: <span id="v_br">0.0</span></div>
-  </div>
-  <div style="background:#334155;padding:10px;">Status: <span id="st">-</span></div>
-  <div class="grid">
-    <div class="card"><label>Kp Angle</label><input type="range" id="ka" min="0" max="30" step="0.1" onchange="u()"></div>
-    <div class="card"><label>Kd Angle</label><input type="range" id="kda" min="0" max="10" step="0.1" onchange="u()"></div>
-    <div class="card"><label>Kp Dist</label><input type="range" id="kp" min="0" max="20" step="0.1" onchange="u()"></div>
-    <div class="card"><label>Kd Dist</label><input type="range" id="kdd" min="0" max="10" step="0.1" onchange="u()"></div>
-    <div class="card"><label>Base Spd</label><input type="range" id="bs" min="100" max="255" onchange="u()"></div>
-    <div class="card"><label>Piv Spd</label><input type="range" id="ps" min="100" max="255" onchange="u()"></div>
-    <div class="card"><label>Corner Thr</label><input type="range" id="ct" min="20" max="100" onchange="u()"></div>
-    <div class="card"><label>Drive Past</label><input type="range" id="pt" min="500" max="4000" step="50" onchange="u()"></div>
-    <div class="card"><label>Safety Lim</label><input type="range" id="sl" min="5" max="20" onchange="u()"></div>
-    <div class="card"><label>Filter Alp</label><input type="range" id="al" min="0.1" max="0.9" step="0.05" onchange="u()"></div>
-  </div>
-  <button class="btn" style="background:#10b981" onclick="fetch('/start')">START</button>
-  <button class="btn" style="background:#f43f5e" onclick="fetch('/stop')">STOP</button>
-  <script>
-    function u(){
-      let q = `?ka=${document.getElementById('ka').value}&kda=${document.getElementById('kda').value}&kp=${document.getElementById('kp').value}&kdd=${document.getElementById('kdd').value}&bs=${document.getElementById('bs').value}&ps=${document.getElementById('ps').value}&ct=${document.getElementById('ct').value}&pt=${document.getElementById('pt').value}&sl=${document.getElementById('sl').value}&al=${document.getElementById('al').value}`;
-      fetch('/tune'+q);
-    }
-    setInterval(()=>{
-      fetch('/data').then(r=>r.json()).then(j=>{
-        document.getElementById('st').innerHTML=j.msg;
-        document.getElementById('v_fr').innerHTML=j.fr.toFixed(1);
-        document.getElementById('v_br').innerHTML=j.br.toFixed(1);
-      });
-    }, 400);
-  </script>
-</body></html>)rawliteral";
+body { background:#0f172a; color:#fff; font-family:sans-serif; text-align:center; }
+.card { background:#1e293b; margin:10px; padding:20px; border-radius:16px; display:inline-block; }
+.value { font-size:28px; }
+button { padding:12px 25px; margin:10px; border:none; border-radius:10px; }
+.start { background:#22c55e; }
+.stop { background:#ef4444; }
+</style>
+</head>
 
+<body>
+<h2>ShapeBot</h2>
+
+<div class="card">FR<br><span id="fr" class="value">0</span></div>
+<div class="card">MR<br><span id="mr" class="value">0</span></div>
+<div class="card">F<br><span id="f" class="value">0</span></div>
+<div class="card">Theta<br><span id="t" class="value">0</span></div>
+
+<h3 id="s">---</h3>
+
+<button class="start" onclick="fetch('/start')">START</button>
+<button class="stop" onclick="fetch('/stop')">STOP</button>
+<br>
+<button onclick="location.href='/tunePage'">Advanced</button>
+
+<script>
+setInterval(()=>{
+ fetch('/data').then(r=>r.json()).then(j=>{
+  fr.innerHTML=j.fr.toFixed(1);
+  mr.innerHTML=j.mr.toFixed(1);
+  f.innerHTML=j.f.toFixed(1);
+  t.innerHTML=j.theta.toFixed(1);
+  s.innerHTML=j.msg;
+ });
+},300);
+</script>
+</body>
+</html>
+)rawliteral";
+
+// ---------------- TUNE PAGE ----------------
+const char TUNE_PAGE[] PROGMEM = R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { background:#000; color:#0ff; font-family:sans-serif; text-align:center; }
+input { width:100px; padding:6px; margin:5px; }
+button { padding:10px 20px; margin:10px; background:#0ff; border:none; }
+</style>
+</head>
+
+<body>
+<h2>Advanced Tuning</h2>
+
+AngularVel<br><input id="av"><br>
+TargetAngle<br><input id="ta"><br>
+TargetMin<br><input id="tmin"><br>
+TargetMax<br><input id="tmax"><br>
+FollowSpeed<br><input id="fs"><br>
+TurnOuter<br><input id="to"><br>
+TurnInner<br><input id="ti"><br>
+ConcaveThreshold<br><input id="ct"><br>
+
+<button onclick="send()">Apply</button>
+<br><br>
+<button onclick="location.href='/'">Back</button>
+
+<hr>
+
+FR:<span id="fr">0</span><br>
+MR:<span id="mr">0</span><br>
+F:<span id="f">0</span><br>
+Theta:<span id="t">0</span><br>
+Status:<span id="s">---</span>
+
+<script>
+function send(){
+ fetch(`/setParams?av=${av.value}&ta=${ta.value}&tmin=${tmin.value}&tmax=${tmax.value}&fs=${fs.value}&to=${to.value}&ti=${ti.value}&ct=${ct.value}`);
+}
+
+setInterval(()=>{
+ fetch('/data').then(r=>r.json()).then(j=>{
+  fr.innerHTML=j.fr.toFixed(1);
+  mr.innerHTML=j.mr.toFixed(1);
+  f.innerHTML=j.f.toFixed(1);
+  t.innerHTML=j.theta.toFixed(1);
+  s.innerHTML=j.msg;
+ });
+},300);
+</script>
+</body>
+</html>
+)rawliteral";
+
+// ---------------- SETUP ----------------
 void setup() {
   Serial.begin(115200);
-  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT); pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
-  ledcAttach(ENA, 5000, 8); ledcAttach(ENB, 5000, 8);
-  pinMode(trigFR, OUTPUT); pinMode(echoFR, INPUT); pinMode(trigBR, OUTPUT); pinMode(echoBR, INPUT);
+
+  pinMode(IN1,OUTPUT); pinMode(IN2,OUTPUT);
+  pinMode(IN3,OUTPUT); pinMode(IN4,OUTPUT);
+
+  ledcAttach(ENA,5000,8);
+  ledcAttach(ENB,5000,8);
+
+  pinMode(trigFR,OUTPUT); pinMode(echoFR,INPUT);
+  pinMode(trigMR,OUTPUT); pinMode(echoMR,INPUT);
+  pinMode(trigF, OUTPUT); pinMode(echoF, INPUT);
+
+  pinMode(led,OUTPUT);
+
+  hardStop();
   if (!WiFi.config(local_IP, gateway, subnet)) {
     Serial.println("STA Failed to configure");
   }
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) delay(500);
-  server.on("/", []() { server.send_P(200, "text/html", INDEX_HTML); });
-  server.on("/start", []() { isRunning = true; currentState = FOLLOWING; strncpy(statusMsg, "FOLLOWING", 40); server.send(200); });
-  server.on("/stop", []() { isRunning = false; currentState = STOPPED; strncpy(statusMsg, "STOPPED", 40); server.send(200); });
-  server.on("/tune", []() {
-    Kpa = server.arg("ka").toFloat(); Kda = server.arg("kda").toFloat();
-    Kpd = server.arg("kp").toFloat(); Kdd = server.arg("kdd").toFloat();
-    bSpd = server.arg("bs").toInt(); pSpd = server.arg("ps").toInt();
-    cThr = server.arg("ct").toFloat(); pTime = server.arg("pt").toInt();
-    sLim = server.arg("sl").toFloat(); alp = server.arg("al").toFloat();
+  WiFi.begin(ssid,password);
+  while (WiFi.status()!=WL_CONNECTED) delay(500);
+
+  WiFi.setHostname("shapebot");
+
+  server.on("/", [](){ server.send_P(200,"text/html",PAGE); });
+  server.on("/tunePage", [](){ server.send_P(200,"text/html",TUNE_PAGE); });
+
+  server.on("/start", [](){
+    concaveDetected = false;
+    isRunning = true;
+    theta = 0;
+    turnStart = 0;
+    strcpy(statusMsg,"RUNNING");
     server.send(200);
   });
-  server.on("/data", []() {
-    char json[120]; 
-    // NOW INCLUDING FR AND BR IN THE JSON DATA
-    snprintf(json, sizeof(json), "{\"msg\":\"%s\",\"fr\":%.1f,\"br\":%.1f}", statusMsg, frFilt, brFilt);
-    server.send(200, "application/json", json);
+
+  server.on("/stop", [](){
+    isRunning = false;
+    hardStop();
+    strcpy(statusMsg,"STOPPED");
+    server.send(200);
   });
+
+  server.on("/setParams", [](){
+    if(server.hasArg("av")) angularVel = server.arg("av").toFloat();
+    if(server.hasArg("ta")) targetAngle = server.arg("ta").toFloat();
+    if(server.hasArg("tmin")) targetMin = server.arg("tmin").toFloat();
+    if(server.hasArg("tmax")) targetMax = server.arg("tmax").toFloat();
+    if(server.hasArg("fs")) followSpeed = server.arg("fs").toInt();
+    if(server.hasArg("to")) turnOuter = server.arg("to").toInt();
+    if(server.hasArg("ti")) turnInner = server.arg("ti").toInt();
+    if(server.hasArg("ct")) concaveThreshold = server.arg("ct").toFloat();
+    server.send(200,"text/plain","OK");
+  });
+
+  server.on("/data", [](){
+    char j[200];
+    snprintf(j,sizeof(j),
+      "{\"msg\":\"%s\",\"fr\":%.1f,\"mr\":%.1f,\"f\":%.1f,\"theta\":%.1f}",
+      statusMsg, fr, mr, f, theta);
+    server.send(200,"application/json",j);
+  });
+
   server.begin();
 }
 
+// ---------------- LOOP ----------------
 void loop() {
-  server.handleClient();
-  updateSensors();
-  yield();
-  if (!isRunning) { drive(0,0); return; }
 
-  switch (currentState) {
-    case FOLLOWING:
-      if (frFilt > cThr) { stateTimer = millis(); currentState = DRIVE_PAST; strncpy(statusMsg, "CORNER DETECTED", 40); }
-      else runPID();
-      break;
-    case DRIVE_PAST:
-      drive(bSpd, bSpd);
-      if (millis() - stateTimer > pTime) { drive(0,0); delay(200); currentState = PIVOT_RIGHT; stateTimer = millis(); }
-      break;
-    case PIVOT_RIGHT:
-      drive(pSpd, -pSpd);
-      if (millis() - stateTimer > 800 && frFilt < eThr) { currentState = FOLLOWING; strncpy(statusMsg, "FOLLOWING", 40); }
-      break;
+  server.handleClient();
+
+  fr = getDist(trigFR, echoFR);
+  mr = getDist(trigMR, echoMR);
+  f  = getDist(trigF, echoF);
+
+  if (concaveDetected) {
+    hardStop();
+    strcpy(statusMsg,"CONCAVE LOCKED");
+    return;
   }
-  delay(30);
+
+  if (!isRunning) {
+    hardStop();
+    return;
+  }
+
+  if (f <= concaveThreshold) {
+    hardStop();
+    concaveDetected = true;
+    isRunning = false;
+    strcpy(statusMsg,"CONCAVE");
+    return;
+  }
+
+  if (theta >= targetAngle) {
+    hardStop();
+    strcpy(statusMsg,"CONVEX");
+    return;
+  }
+
+  if (mr >= targetMin && mr <= targetMax) {
+    drive(followSpeed, followSpeed);
+    strcpy(statusMsg,"FOLLOW");
+  }
+
+  else if (fr >= targetMax && mr >= targetMax) {
+    if (turnStart == 0) turnStart = millis();
+
+    drive(turnInner, turnOuter);
+    strcpy(statusMsg,"TURN");
+
+    unsigned long now = millis();
+    float dt = (now - turnStart) / 1000.0;
+    theta += angularVel * dt * (180 / PI);
+    turnStart = now;
+  }
+
+  else if (mr < targetMin) {
+    drive(turnOuter, turnInner);
+    strcpy(statusMsg,"TOO CLOSE");
+  }
+
+  else {
+    drive(followSpeed, followSpeed);
+  }
+
+  delay(10);
 }
