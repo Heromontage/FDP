@@ -1,87 +1,103 @@
 <!DOCTYPE html>
 
-<html class="dark" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>KINETIC SENTINEL | Robot Telemetry Dashboard</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
+<html class="dark" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>G26 | Robot Telemetry Dashboard</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=Space+Grotesk:wght@300;400;500;600;700&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
         tailwind.config = {
-          darkMode: "class",
-          theme: {
-            extend: {
-              "colors": {
-                      "on-background": "#e2e2eb",
-                      "surface": "#111319",
-                      "on-tertiary-fixed-variant": "#5e4200",
-                      "on-secondary-fixed": "#001f27",
-                      "inverse-on-surface": "#2e3037",
-                      "on-tertiary-container": "#815b00",
-                      "surface-container-lowest": "#0c0e14",
-                      "tertiary-fixed-dim": "#ffba20",
-                      "tertiary": "#fffaf7",
-                      "on-primary": "#003919",
-                      "on-tertiary": "#412d00",
-                      "surface-variant": "#33343b",
-                      "surface-container-highest": "#33343b",
-                      "surface-tint": "#00e479",
-                      "secondary-container": "#00d2fd",
-                      "surface-dim": "#111319",
-                      "error": "#ffb4ab",
-                      "surface-container": "#1e1f26",
-                      "on-secondary-container": "#005669",
-                      "primary": "#f1ffef",
-                      "tertiary-container": "#ffd999",
-                      "outline": "#849585",
-                      "on-tertiary-fixed": "#271900",
-                      "on-primary-fixed": "#00210c",
-                      "secondary": "#a2e7ff",
-                      "surface-bright": "#373940",
-                      "primary-fixed-dim": "#00e479",
-                      "tertiary-fixed": "#ffdea8",
-                      "primary-fixed": "#60ff99",
-                      "on-surface": "#e2e2eb",
-                      "primary-container": "#00ff88",
-                      "on-surface-variant": "#b9cbb9",
-                      "inverse-surface": "#e2e2eb",
-                      "on-error": "#690005",
-                      "background": "#111319",
-                      "on-error-container": "#ffdad6",
-                      "on-secondary": "#003642",
-                      "error-container": "#93000a",
-                      "inverse-primary": "#006d37",
-                      "on-secondary-fixed-variant": "#004e5f",
-                      "on-primary-container": "#007139",
-                      "surface-container-high": "#282a30",
-                      "surface-container-low": "#191b22",
-                      "secondary-fixed-dim": "#3cd7ff",
-                      "outline-variant": "#3b4b3d",
-                      "secondary-fixed": "#b4ebff",
-                      "on-primary-fixed-variant": "#005228"
-              },
-              "borderRadius": {
-                      "DEFAULT": "0.25rem",
-                      "lg": "0.5rem",
-                      "xl": "0.75rem",
-                      "full": "9999px"
-              },
-              "fontFamily": {
-                      "headline": ["Space Grotesk"],
-                      "body": ["Inter"],
-                      "label": ["Space Grotesk"]
-              }
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-background": "#e2e2eb",
+                        "surface": "#111319",
+                        "on-tertiary-fixed-variant": "#5e4200",
+                        "on-secondary-fixed": "#001f27",
+                        "inverse-on-surface": "#2e3037",
+                        "on-tertiary-container": "#815b00",
+                        "surface-container-lowest": "#0c0e14",
+                        "tertiary-fixed-dim": "#ffba20",
+                        "tertiary": "#fffaf7",
+                        "on-primary": "#003919",
+                        "on-tertiary": "#412d00",
+                        "surface-variant": "#33343b",
+                        "surface-container-highest": "#33343b",
+                        "surface-tint": "#00e479",
+                        "secondary-container": "#00d2fd",
+                        "surface-dim": "#111319",
+                        "error": "#ffb4ab",
+                        "surface-container": "#1e1f26",
+                        "on-secondary-container": "#005669",
+                        "primary": "#f1ffef",
+                        "tertiary-container": "#ffd999",
+                        "outline": "#849585",
+                        "on-tertiary-fixed": "#271900",
+                        "on-primary-fixed": "#00210c",
+                        "secondary": "#a2e7ff",
+                        "surface-bright": "#373940",
+                        "primary-fixed-dim": "#00e479",
+                        "tertiary-fixed": "#ffdea8",
+                        "primary-fixed": "#60ff99",
+                        "on-surface": "#e2e2eb",
+                        "primary-container": "#00ff88",
+                        "on-surface-variant": "#b9cbb9",
+                        "inverse-surface": "#e2e2eb",
+                        "on-error": "#690005",
+                        "background": "#111319",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary": "#003642",
+                        "error-container": "#93000a",
+                        "inverse-primary": "#006d37",
+                        "on-secondary-fixed-variant": "#004e5f",
+                        "on-primary-container": "#007139",
+                        "surface-container-high": "#282a30",
+                        "surface-container-low": "#191b22",
+                        "secondary-fixed-dim": "#3cd7ff",
+                        "outline-variant": "#3b4b3d",
+                        "secondary-fixed": "#b4ebff",
+                        "on-primary-fixed-variant": "#005228"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Inter"],
+                        "label": ["Space Grotesk"]
+                    }
+                },
             },
-          },
         }
     </script>
-<style>
-        body { font-family: 'Inter', sans-serif; }
-        .font-headline { font-family: 'Space Grotesk', sans-serif; }
-        .font-mono { font-family: 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace; }
-        
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .font-headline {
+            font-family: 'Space Grotesk', sans-serif;
+        }
+
+        .font-mono {
+            font-family: 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+        }
+
         .glass-panel {
             background: rgba(30, 31, 38, 0.6);
             backdrop-filter: blur(12px);
@@ -104,192 +120,259 @@
         }
     </style>
 </head>
-<body class="bg-surface-container-lowest text-on-surface min-h-screen selection:bg-primary-container selection:text-on-primary-container">
-<!-- TopAppBar -->
-<header class="w-full top-0 sticky bg-[#111319] dark:bg-[#111319] border-b border-[#373940]/20 shadow-[0_0_20px_rgba(0,255,136,0.1)] z-50">
-<div class="flex justify-between items-center px-8 py-4 w-full">
-<div class="flex items-center gap-8">
-<h1 class="text-2xl font-bold tracking-tighter text-[#00FF88] font-['Space_Grotesk'] uppercase">
-                    KINETIC SENTINEL
+
+<body
+    class="bg-surface-container-lowest text-on-surface min-h-screen selection:bg-primary-container selection:text-on-primary-container">
+    <!-- TopAppBar -->
+    <header
+        class="w-full top-0 sticky bg-[#111319] dark:bg-[#111319] border-b border-[#373940]/20 shadow-[0_0_20px_rgba(0,255,136,0.1)] z-50">
+        <div class="flex justify-between items-center px-8 py-4 w-full">
+            <div class="flex items-center gap-8">
+                <h1 class="text-2xl font-bold tracking-tighter text-[#00FF88] font-['Space_Grotesk'] uppercase">
+                    G26 |/ TELEMETRY ROBOT DASHBOARD
                 </h1>
-<nav class="hidden md:flex gap-6 items-center">
-<a class="text-[#00FF88] border-b-2 border-[#00FF88] pb-1 font-['Space_Grotesk'] tracking-wider uppercase text-sm" href="#">TELEMETRY</a>
-<a class="text-[#E2E2EB]/60 hover:text-[#E2E2EB] transition-colors font-['Space_Grotesk'] tracking-wider uppercase text-sm" href="#">ANALYSIS</a>
-<a class="text-[#E2E2EB]/60 hover:text-[#E2E2EB] transition-colors font-['Space_Grotesk'] tracking-wider uppercase text-sm" href="#">SENSORS</a>
-<a class="text-[#E2E2EB]/60 hover:text-[#E2E2EB] transition-colors font-['Space_Grotesk'] tracking-wider uppercase text-sm" href="#">LOGS</a>
-</nav>
-</div>
-<div class="flex items-center gap-6">
-<div class="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline-variant/20">
-<span class="w-2 h-2 bg-primary-container rounded-full animate-pulse"></span>
-<span class="text-[10px] font-mono tracking-widest text-primary-container uppercase">CONNECTED</span>
-<span class="text-[10px] font-mono text-on-surface-variant opacity-50 uppercase ml-2">Polling...</span>
-</div>
-<div class="flex items-center gap-4">
-<button class="material-symbols-outlined text-[#E2E2EB]/60 hover:text-[#00FF88] transition-all scale-95 active:scale-90" data-icon="settings">settings</button>
-<button class="material-symbols-outlined text-[#E2E2EB]/60 hover:text-[#00FF88] transition-all scale-95 active:scale-90" data-icon="power_settings_new">power_settings_new</button>
-<div class="w-8 h-8 rounded-full bg-surface-bright overflow-hidden border border-outline-variant/30">
-<img alt="Operator" class="w-full h-full object-cover" data-alt="Close-up portrait of a female technical operator in a dimly lit server room environment with blue light reflecting on her face" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDzdTz39Qzb-WtsYhKRUd_CbLxBoTJrtuwcEQGUX0lKNMKIaTT3eLWYst8u8GJHvjx-XMTGQjFxxH4KlX-lA_IJrI7BvSvXpjQ7ZKul9nLWeKlAx4DfRXjM4mdHhNvY2nzow3Ifikb8EhpsICQ1G-BSiiGBRFnrycTztRwy8aryugf8RVAY8RpyDGMcExZp1EIj3LcIXbj0WKOG_wzpEork7UE17_F8W9tNpB7jtqIMNf0_mPIN2wsgSrqxjUlYyipdToaP2A9XK9w"/>
-</div>
-</div>
-</div>
-</div>
-</header>
-<main class="max-w-[1440px] mx-auto p-8 space-y-8">
-<!-- Shape Detection Alert Card -->
-<section class="relative overflow-hidden rounded-xl bg-primary-container p-[2px] pulse-glow">
-<div class="bg-surface p-6 rounded-[calc(0.75rem-1px)] flex flex-col md:flex-row items-center justify-between gap-6">
-<div class="flex items-center gap-6">
-<div class="w-16 h-16 bg-primary-container/10 flex items-center justify-center rounded-lg border border-primary-container/20">
-<span class="material-symbols-outlined text-4xl text-primary-container" style="font-variation-settings: 'FILL' 1;">radar</span>
-</div>
-<div>
-<h2 class="font-headline text-3xl font-bold tracking-tight text-primary-container">CONCAVE SHAPE DETECTED!</h2>
-<p class="text-on-surface-variant font-mono text-xs mt-1 uppercase tracking-widest">Autonomous Identification Sequence: Active</p>
-</div>
-</div>
-<div class="text-right">
-<div class="font-mono text-xs text-on-surface-variant uppercase tracking-tighter">Last Updated</div>
-<div class="font-mono text-lg text-primary-container">14:22:05.892 MS</div>
-</div>
-</div>
-</section>
-<!-- Main Visualizer & Secondary Stats -->
-<div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
-<!-- Sensor Data Grid -->
-<div class="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
-<!-- Left Sensor -->
-<div class="glass-panel p-6 rounded-xl relative group">
-<div class="flex justify-between items-start mb-8">
-<span class="material-symbols-outlined text-secondary-container" data-icon="sensors">sensors</span>
-<span class="font-headline text-[10px] tracking-[0.2em] text-on-surface-variant uppercase font-bold">Left Sector</span>
-</div>
-<div class="flex flex-col items-center">
-<div class="text-6xl font-mono font-light text-primary-container tracking-tighter mb-4">15<span class="text-xl ml-1 text-on-surface-variant uppercase tracking-widest font-body">cm</span></div>
-<div class="w-full h-1 bg-surface-container-lowest rounded-full overflow-hidden">
-<div class="h-full w-[15%] bg-gradient-to-r from-primary-container to-secondary-container"></div>
-</div>
-<div class="flex justify-between w-full mt-2 font-mono text-[8px] text-on-surface-variant/40 uppercase">
-<span>0cm</span>
-<span>Range</span>
-<span>100cm</span>
-</div>
-</div>
-</div>
-<!-- Center Sensor -->
-<div class="glass-panel p-6 rounded-xl border border-primary-container/30 ring-1 ring-primary-container/10">
-<div class="flex justify-between items-start mb-8">
-<span class="material-symbols-outlined text-primary-container" data-icon="center_focus_strong" style="font-variation-settings: 'FILL' 1;">center_focus_strong</span>
-<span class="font-headline text-[10px] tracking-[0.2em] text-primary-container uppercase font-bold">Axial Center</span>
-</div>
-<div class="flex flex-col items-center">
-<div class="text-6xl font-mono font-light text-primary-container tracking-tighter mb-4">42<span class="text-xl ml-1 text-on-surface-variant uppercase tracking-widest font-body">cm</span></div>
-<div class="w-full h-1 bg-surface-container-lowest rounded-full overflow-hidden">
-<div class="h-full w-[42%] bg-gradient-to-r from-primary-container to-secondary-container"></div>
-</div>
-<div class="flex justify-between w-full mt-2 font-mono text-[8px] text-on-surface-variant/40 uppercase">
-<span>0cm</span>
-<span>Precision Scan</span>
-<span>100cm</span>
-</div>
-</div>
-</div>
-<!-- Right Sensor -->
-<div class="glass-panel p-6 rounded-xl relative group">
-<div class="flex justify-between items-start mb-8">
-<span class="material-symbols-outlined text-secondary-container" data-icon="sensors">sensors</span>
-<span class="font-headline text-[10px] tracking-[0.2em] text-on-surface-variant uppercase font-bold">Right Sector</span>
-</div>
-<div class="flex flex-col items-center">
-<div class="text-6xl font-mono font-light text-primary-container tracking-tighter mb-4">88<span class="text-xl ml-1 text-on-surface-variant uppercase tracking-widest font-body">cm</span></div>
-<div class="w-full h-1 bg-surface-container-lowest rounded-full overflow-hidden">
-<div class="h-full w-[88%] bg-gradient-to-r from-primary-container to-secondary-container"></div>
-</div>
-<div class="flex justify-between w-full mt-2 font-mono text-[8px] text-on-surface-variant/40 uppercase">
-<span>0cm</span>
-<span>Range</span>
-<span>100cm</span>
-</div>
-</div>
-</div>
-<!-- Large Map/Visualizer (Bento Pattern) -->
-<div class="md:col-span-3 glass-panel h-96 rounded-xl overflow-hidden relative border border-outline-variant/10">
-<div class="absolute inset-0 bg-surface-container-lowest/40 pointer-events-none z-10"></div>
-<div class="absolute top-6 left-6 z-20">
-<div class="flex items-center gap-2 px-3 py-1 bg-surface-container-highest/80 backdrop-blur rounded-lg border border-outline-variant/20">
-<span class="material-symbols-outlined text-sm text-secondary-container">location_on</span>
-<span class="text-[10px] font-mono tracking-widest text-on-surface">LOCATING: TEST_RANGE_DELTA</span>
-</div>
-</div>
-<div class="absolute bottom-6 right-6 z-20 flex gap-2">
-<button class="bg-surface-bright/80 backdrop-blur border border-outline-variant/20 px-3 py-1.5 rounded font-mono text-[10px] hover:bg-primary-container hover:text-on-primary-container transition-colors">3D WIREFRAME</button>
-<button class="bg-surface-bright/80 backdrop-blur border border-outline-variant/20 px-3 py-1.5 rounded font-mono text-[10px] hover:bg-primary-container hover:text-on-primary-container transition-colors">POINT CLOUD</button>
-</div>
-<div class="w-full h-full bg-cover bg-center grayscale opacity-60" data-alt="High-contrast technical blueprint of a robotics testing facility with glowing wireframe lines and digital UI elements" data-location="Test Range Delta" style="background-image: url('https://placeholder.pics/svg/300')"></div>
-</div>
-</div>
-<!-- Side Metrics -->
-<div class="space-y-6">
-<div class="bg-surface-container p-6 rounded-xl border border-outline-variant/10">
-<h3 class="font-headline text-[10px] tracking-[0.2em] text-on-surface-variant uppercase font-bold mb-4">Environmental</h3>
-<div class="space-y-4">
-<div class="flex justify-between items-center">
-<span class="text-xs text-on-surface-variant font-mono">CORE TEMP</span>
-<span class="text-sm font-mono text-primary-container">34.2°C</span>
-</div>
-<div class="flex justify-between items-center">
-<span class="text-xs text-on-surface-variant font-mono">BATTERY</span>
-<span class="text-sm font-mono text-secondary-container">82%</span>
-</div>
-<div class="flex justify-between items-center">
-<span class="text-xs text-on-surface-variant font-mono">INCLINE</span>
-<span class="text-sm font-mono text-tertiary-fixed-dim">2.4°</span>
-</div>
-</div>
-</div>
-<div class="bg-surface-container-high p-6 rounded-xl border border-outline-variant/10">
-<h3 class="font-headline text-[10px] tracking-[0.2em] text-on-surface-variant uppercase font-bold mb-4">Diagnostic Feed</h3>
-<div class="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
-<div class="text-[9px] font-mono leading-relaxed border-l-2 border-primary-container pl-3 py-1">
-<div class="text-primary-container">14:22:04</div>
-<div class="text-on-surface">LIDAR: Surface Curvature Exceeds 0.8 Threshold</div>
-</div>
-<div class="text-[9px] font-mono leading-relaxed border-l-2 border-secondary-container pl-3 py-1">
-<div class="text-secondary-container">14:22:01</div>
-<div class="text-on-surface">DRIVE: Adjusting Velocity to 0.4 m/s</div>
-</div>
-<div class="text-[9px] font-mono leading-relaxed border-l-2 border-outline-variant pl-3 py-1 opacity-50">
-<div class="text-on-surface-variant">14:21:58</div>
-<div class="text-on-surface">CALIBRATION: IMU Offset Applied (+0.02)</div>
-</div>
-<div class="text-[9px] font-mono leading-relaxed border-l-2 border-error pl-3 py-1">
-<div class="text-error">14:21:55</div>
-<div class="text-on-surface">SYSTEM: Proximity Alert Zone Alpha</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</main>
-<!-- Footer -->
-<footer class="w-full bottom-0 fixed bg-[#0C0E14] dark:bg-[#0C0E14] border-t border-[#373940]/10 z-50">
-<div class="flex justify-between items-center px-8 py-2 w-full">
-<div class="flex items-center gap-4">
-<span class="material-symbols-outlined text-[14px] text-[#00FF88]" data-icon="smart_toy">smart_toy</span>
-<span class="text-[#00FF88] font-mono text-[10px] tracking-widest uppercase">
+                <nav class="hidden md:flex gap-6 items-center">
+                    <a class="text-[#00FF88] border-b-2 border-[#00FF88] pb-1 font-['Space_Grotesk'] tracking-wider uppercase text-sm"
+                        href="#">TELEMETRY</a>
+                    <a class="text-[#E2E2EB]/60 hover:text-[#E2E2EB] transition-colors font-['Space_Grotesk'] tracking-wider uppercase text-sm"
+                        href="#">ANALYSIS</a>
+                    <a class="text-[#E2E2EB]/60 hover:text-[#E2E2EB] transition-colors font-['Space_Grotesk'] tracking-wider uppercase text-sm"
+                        href="#">SENSORS</a>
+                    <a class="text-[#E2E2EB]/60 hover:text-[#E2E2EB] transition-colors font-['Space_Grotesk'] tracking-wider uppercase text-sm"
+                        href="#">LOGS</a>
+                </nav>
+            </div>
+            <div class="flex items-center gap-6">
+                <div
+                    class="flex items-center gap-2 px-3 py-1 bg-surface-container rounded-full border border-outline-variant/20">
+                    <span class="w-2 h-2 bg-primary-container rounded-full animate-pulse"></span>
+                    <span
+                        class="text-[10px] font-mono tracking-widest text-primary-container uppercase">CONNECTED</span>
+                    <span
+                        class="text-[10px] font-mono text-on-surface-variant opacity-50 uppercase ml-2">Polling...</span>
+                </div>
+                <div class="flex items-center gap-4">
+                    <button
+                        class="material-symbols-outlined text-[#E2E2EB]/60 hover:text-[#00FF88] transition-all scale-95 active:scale-90"
+                        data-icon="settings">settings</button>
+                    <button
+                        class="material-symbols-outlined text-[#E2E2EB]/60 hover:text-[#00FF88] transition-all scale-95 active:scale-90"
+                        data-icon="power_settings_new">power_settings_new</button>
+                    <div
+                        class="w-8 h-8 rounded-full bg-surface-bright overflow-hidden border border-outline-variant/30">
+                        <img alt="Operator" class="w-full h-full object-cover"
+                            data-alt="Close-up portrait of a female technical operator in a dimly lit server room environment with blue light reflecting on her face"
+                            src="https://lh3.googleusercontent.com/aida-public/AB6AXuDzdTz39Qzb-WtsYhKRUd_CbLxBoTJrtuwcEQGUX0lKNMKIaTT3eLWYst8u8GJHvjx-XMTGQjFxxH4KlX-lA_IJrI7BvSvXpjQ7ZKul9nLWeKlAx4DfRXjM4mdHhNvY2nzow3Ifikb8EhpsICQ1G-BSiiGBRFnrycTztRwy8aryugf8RVAY8RpyDGMcExZp1EIj3LcIXbj0WKOG_wzpEork7UE17_F8W9tNpB7jtqIMNf0_mPIN2wsgSrqxjUlYyipdToaP2A9XK9w" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+    <main class="max-w-[1440px] mx-auto p-8 space-y-8">
+        <!-- Shape Detection Alert Card -->
+        <section class="relative overflow-hidden rounded-xl bg-primary-container p-[2px] pulse-glow">
+            <div
+                class="bg-surface p-6 rounded-[calc(0.75rem-1px)] flex flex-col md:flex-row items-center justify-between gap-6">
+                <div class="flex items-center gap-6">
+                    <div
+                        class="w-16 h-16 bg-primary-container/10 flex items-center justify-center rounded-lg border border-primary-container/20">
+                        <span class="material-symbols-outlined text-4xl text-primary-container"
+                            style="font-variation-settings: 'FILL' 1;">radar</span>
+                    </div>
+                    <div>
+                        <h2 class="font-headline text-3xl font-bold tracking-tight text-primary-container">CONCAVE SHAPE
+                            DETECTED!</h2>
+                        <p class="text-on-surface-variant font-mono text-xs mt-1 uppercase tracking-widest">Autonomous
+                            Identification Sequence: Active</p>
+                    </div>
+                </div>
+                <div class="text-right">
+                    <div class="font-mono text-xs text-on-surface-variant uppercase tracking-tighter">Last Updated</div>
+                    <div class="font-mono text-lg text-primary-container">14:22:05.892 MS</div>
+                </div>
+            </div>
+        </section>
+        <!-- Main Visualizer & Secondary Stats -->
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+            <!-- Sensor Data Grid -->
+            <div class="lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Left Sensor -->
+                <div class="glass-panel p-6 rounded-xl relative group">
+                    <div class="flex justify-between items-start mb-8">
+                        <span class="material-symbols-outlined text-secondary-container"
+                            data-icon="sensors">sensors</span>
+                        <span
+                            class="font-headline text-[10px] tracking-[0.2em] text-on-surface-variant uppercase font-bold">Left
+                            Sector</span>
+                    </div>
+                    <div class="flex flex-col items-center">
+                        <div class="text-6xl font-mono font-light text-primary-container tracking-tighter mb-4">15<span
+                                class="text-xl ml-1 text-on-surface-variant uppercase tracking-widest font-body">cm</span>
+                        </div>
+                        <div class="w-full h-1 bg-surface-container-lowest rounded-full overflow-hidden">
+                            <div class="h-full w-[15%] bg-gradient-to-r from-primary-container to-secondary-container">
+                            </div>
+                        </div>
+                        <div
+                            class="flex justify-between w-full mt-2 font-mono text-[8px] text-on-surface-variant/40 uppercase">
+                            <span>0cm</span>
+                            <span>Range</span>
+                            <span>100cm</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Center Sensor -->
+                <div
+                    class="glass-panel p-6 rounded-xl border border-primary-container/30 ring-1 ring-primary-container/10">
+                    <div class="flex justify-between items-start mb-8">
+                        <span class="material-symbols-outlined text-primary-container" data-icon="center_focus_strong"
+                            style="font-variation-settings: 'FILL' 1;">center_focus_strong</span>
+                        <span
+                            class="font-headline text-[10px] tracking-[0.2em] text-primary-container uppercase font-bold">Axial
+                            Center</span>
+                    </div>
+                    <div class="flex flex-col items-center">
+                        <div class="text-6xl font-mono font-light text-primary-container tracking-tighter mb-4">42<span
+                                class="text-xl ml-1 text-on-surface-variant uppercase tracking-widest font-body">cm</span>
+                        </div>
+                        <div class="w-full h-1 bg-surface-container-lowest rounded-full overflow-hidden">
+                            <div class="h-full w-[42%] bg-gradient-to-r from-primary-container to-secondary-container">
+                            </div>
+                        </div>
+                        <div
+                            class="flex justify-between w-full mt-2 font-mono text-[8px] text-on-surface-variant/40 uppercase">
+                            <span>0cm</span>
+                            <span>Precision Scan</span>
+                            <span>100cm</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Right Sensor -->
+                <div class="glass-panel p-6 rounded-xl relative group">
+                    <div class="flex justify-between items-start mb-8">
+                        <span class="material-symbols-outlined text-secondary-container"
+                            data-icon="sensors">sensors</span>
+                        <span
+                            class="font-headline text-[10px] tracking-[0.2em] text-on-surface-variant uppercase font-bold">Right
+                            Sector</span>
+                    </div>
+                    <div class="flex flex-col items-center">
+                        <div class="text-6xl font-mono font-light text-primary-container tracking-tighter mb-4">88<span
+                                class="text-xl ml-1 text-on-surface-variant uppercase tracking-widest font-body">cm</span>
+                        </div>
+                        <div class="w-full h-1 bg-surface-container-lowest rounded-full overflow-hidden">
+                            <div class="h-full w-[88%] bg-gradient-to-r from-primary-container to-secondary-container">
+                            </div>
+                        </div>
+                        <div
+                            class="flex justify-between w-full mt-2 font-mono text-[8px] text-on-surface-variant/40 uppercase">
+                            <span>0cm</span>
+                            <span>Range</span>
+                            <span>100cm</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- Large Map/Visualizer (Bento Pattern) -->
+                <div
+                    class="md:col-span-3 glass-panel h-96 rounded-xl overflow-hidden relative border border-outline-variant/10">
+                    <div class="absolute inset-0 bg-surface-container-lowest/40 pointer-events-none z-10"></div>
+                    <div class="absolute top-6 left-6 z-20">
+                        <div
+                            class="flex items-center gap-2 px-3 py-1 bg-surface-container-highest/80 backdrop-blur rounded-lg border border-outline-variant/20">
+                            <span class="material-symbols-outlined text-sm text-secondary-container">location_on</span>
+                            <span class="text-[10px] font-mono tracking-widest text-on-surface">LOCATING:
+                                TEST_RANGE_DELTA</span>
+                        </div>
+                    </div>
+                    <div class="absolute bottom-6 right-6 z-20 flex gap-2">
+                        <button
+                            class="bg-surface-bright/80 backdrop-blur border border-outline-variant/20 px-3 py-1.5 rounded font-mono text-[10px] hover:bg-primary-container hover:text-on-primary-container transition-colors">3D
+                            WIREFRAME</button>
+                        <button
+                            class="bg-surface-bright/80 backdrop-blur border border-outline-variant/20 px-3 py-1.5 rounded font-mono text-[10px] hover:bg-primary-container hover:text-on-primary-container transition-colors">POINT
+                            CLOUD</button>
+                    </div>
+                    <div class="w-full h-full bg-cover bg-center grayscale opacity-60"
+                        data-alt="High-contrast technical blueprint of a robotics testing facility with glowing wireframe lines and digital UI elements"
+                        data-location="Test Range Delta"
+                        style="background-image: url('https://placeholder.pics/svg/300')"></div>
+                </div>
+            </div>
+            <!-- Side Metrics -->
+            <div class="space-y-6">
+                <div class="bg-surface-container p-6 rounded-xl border border-outline-variant/10">
+                    <h3
+                        class="font-headline text-[10px] tracking-[0.2em] text-on-surface-variant uppercase font-bold mb-4">
+                        Environmental</h3>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs text-on-surface-variant font-mono">CORE TEMP</span>
+                            <span class="text-sm font-mono text-primary-container">34.2°C</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs text-on-surface-variant font-mono">BATTERY</span>
+                            <span class="text-sm font-mono text-secondary-container">82%</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-xs text-on-surface-variant font-mono">INCLINE</span>
+                            <span class="text-sm font-mono text-tertiary-fixed-dim">2.4°</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-surface-container-high p-6 rounded-xl border border-outline-variant/10">
+                    <h3
+                        class="font-headline text-[10px] tracking-[0.2em] text-on-surface-variant uppercase font-bold mb-4">
+                        Diagnostic Feed</h3>
+                    <div class="space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-hide">
+                        <div class="text-[9px] font-mono leading-relaxed border-l-2 border-primary-container pl-3 py-1">
+                            <div class="text-primary-container">14:22:04</div>
+                            <div class="text-on-surface">LIDAR: Surface Curvature Exceeds 0.8 Threshold</div>
+                        </div>
+                        <div
+                            class="text-[9px] font-mono leading-relaxed border-l-2 border-secondary-container pl-3 py-1">
+                            <div class="text-secondary-container">14:22:01</div>
+                            <div class="text-on-surface">DRIVE: Adjusting Velocity to 0.4 m/s</div>
+                        </div>
+                        <div
+                            class="text-[9px] font-mono leading-relaxed border-l-2 border-outline-variant pl-3 py-1 opacity-50">
+                            <div class="text-on-surface-variant">14:21:58</div>
+                            <div class="text-on-surface">CALIBRATION: IMU Offset Applied (+0.02)</div>
+                        </div>
+                        <div class="text-[9px] font-mono leading-relaxed border-l-2 border-error pl-3 py-1">
+                            <div class="text-error">14:21:55</div>
+                            <div class="text-on-surface">SYSTEM: Proximity Alert Zone Alpha</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+    <!-- Footer -->
+    <footer class="w-full bottom-0 fixed bg-[#0C0E14] dark:bg-[#0C0E14] border-t border-[#373940]/10 z-50">
+        <div class="flex justify-between items-center px-8 py-2 w-full">
+            <div class="flex items-center gap-4">
+                <span class="material-symbols-outlined text-[14px] text-[#00FF88]"
+                    data-icon="smart_toy">smart_toy</span>
+                <span class="text-[#00FF88] font-mono text-[10px] tracking-widest uppercase">
                     SYSTEM NODE: ALPHA-7 // SHAPE ANALYSIS ENGINE
                 </span>
-</div>
-<div class="flex gap-8">
-<a class="text-[#373940] hover:text-[#00FF88] transition-colors font-mono text-[10px] tracking-widest uppercase" href="#">LATENCY: 12ms</a>
-<a class="text-[#373940] hover:text-[#00FF88] transition-colors font-mono text-[10px] tracking-widest uppercase" href="#">UPTIME: 99.9%</a>
-<a class="text-[#373940] hover:text-[#00FF88] transition-colors font-mono text-[10px] tracking-widest uppercase underline underline-offset-4 decoration-primary-container/30" href="#">DOCS</a>
-</div>
-</div>
-</footer>
-<div class="fixed bottom-12 right-8 z-[60]">
-<button class="w-14 h-14 bg-primary-container text-on-primary-container rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform">
-<span class="material-symbols-outlined text-3xl" style="font-variation-settings: 'FILL' 1;">terminal</span>
-</button>
-</div>
-</body></html>
+            </div>
+            <div class="flex gap-8">
+                <a class="text-[#373940] hover:text-[#00FF88] transition-colors font-mono text-[10px] tracking-widest uppercase"
+                    href="#">LATENCY: 12ms</a>
+                <a class="text-[#373940] hover:text-[#00FF88] transition-colors font-mono text-[10px] tracking-widest uppercase"
+                    href="#">UPTIME: 99.9%</a>
+                <a class="text-[#373940] hover:text-[#00FF88] transition-colors font-mono text-[10px] tracking-widest uppercase underline underline-offset-4 decoration-primary-container/30"
+                    href="#">DOCS</a>
+            </div>
+        </div>
+    </footer>
+    <div class="fixed bottom-12 right-8 z-[60]">
+        <button
+            class="w-14 h-14 bg-primary-container text-on-primary-container rounded-full flex items-center justify-center shadow-lg active:scale-95 transition-transform">
+            <span class="material-symbols-outlined text-3xl" style="font-variation-settings: 'FILL' 1;">terminal</span>
+        </button>
+    </div>
+</body>
+
+</html>

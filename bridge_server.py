@@ -1,116 +1,72 @@
 """
-bridge_server.py  —  Kinetic Sentinel Integration Bridge  (FIXED)
-=================================================================
-Changes from original:
-  1. Parses 6 values from ESP: x y theta frontDist sideFrontDist sideBackDist
-  2. Exposes sensor distances via /sensordata so React can display them.
-  3. Fixes false-positive concave detection on straight-line paths.
-  4. Guards against HTML responses (captive portal / wrong IP).
+bridge_server.py  —  G26 | TELEMETRY ROBOT DASHBOARD Integration Bridge  (ESP32-FIXED)
+=======================================================================
+Key fixes vs. original:
+  1. Polls /data (JSON) instead of / (HTML page) on the ESP32.
+  2. Maps ESP fields correctly:
+       f  → front_dist       (front ultrasonic)
+       fr → side_front_dist  (front-right ultrasonic)
+       mr → side_back_dist   (mid-right ultrasonic)
+  3. Derives shape label directly from the ESP's statusMsg field.
+  4. Sets is_complete when ESP has finished detection (msg CONVEX / CONCAVE).
+  5. x / y remain 0 — the ESP32 has no odometry; path visualizer will
+     show an empty state which is correct behaviour.
+  6. Guards against non-JSON / HTML responses from captive portals.
 """
 
 import sys, time, threading, math, csv, os, socket
-import numpy as np
 import requests
 from flask import Flask, jsonify
 from flask_cors import CORS
 
 # ── Config ──────────────────────────────────────────────────────────────────
-ESP_IP          = sys.argv[1] if len(sys.argv) > 1 else "172.20.10.6"
-PORT            = int(sys.argv[2]) if len(sys.argv) > 2 else 5001
-POLL_INTERVAL   = 0.5
-MAX_PATH_POINTS = 300
-WRITE_CSV       = True
-CSV_PATH        = "positions.csv"
+ESP_IP        = sys.argv[1] if len(sys.argv) > 1 else "172.20.10.6"
+PORT          = int(sys.argv[2]) if len(sys.argv) > 2 else 5001
+POLL_INTERVAL = 0.5
+WRITE_CSV     = True
+CSV_PATH      = "positions.csv"
 
 # ── Shared state ─────────────────────────────────────────────────────────────
 state = {
-    "x":              0,
-    "y":              0,
-    "theta":          0.0,
-    "shape":          "INITIALIZING...",
-    "path":           [],
-    "is_complete":    False,
-    "connected":      False,
-    "error":          None,
-    "front_dist":     0.0,
+    "x":               0,
+    "y":               0,
+    "theta":           0.0,
+    "shape":           "INITIALIZING...",
+    "path":            [],          # stays empty — no odometry on ESP32
+    "is_complete":     False,
+    "connected":       False,
+    "error":           None,
+    "front_dist":      0.0,
     "side_front_dist": 0.0,
     "side_back_dist":  0.0,
+    "esp_msg":         "",          # raw ESP statusMsg for debugging
 }
 state_lock = threading.Lock()
 
 
-# ── Shape detection ───────────────────────────────────────────────────────────
+# ── ESP msg → dashboard shape label ──────────────────────────────────────────
+def _shape_from_msg(msg: str) -> str:
+    """
+    Map the ESP's statusMsg to the shape string the dashboard displays.
 
-def _polygon_area(vertices):
-    n = len(vertices)
-    area = 0.0
-    for i in range(n):
-        x0, y0 = vertices[i]
-        x1, y1 = vertices[(i + 1) % n]
-        area += x0 * y1 - x1 * y0
-    return abs(area) / 2.0
-
-
-def _path_length(vertices):
-    total = 0.0
-    for i in range(1, len(vertices)):
-        dx = vertices[i][0] - vertices[i - 1][0]
-        dy = vertices[i][1] - vertices[i - 1][1]
-        total += math.sqrt(dx * dx + dy * dy)
-    return total
-
-
-def is_roughly_linear(vertices, area_ratio_threshold=0.04):
-    if len(vertices) < 3:
-        return True
-    length = _path_length(vertices)
-    if length < 1.0:
-        return True
-    area = _polygon_area(vertices)
-    return (area / (length * length)) < area_ratio_threshold
-
-
-def is_concave_polygon(vertices):
-    if len(vertices) < 4:
-        return False
-    xs  = [v[0] for v in vertices]
-    ys  = [v[1] for v in vertices]
-    cx  = sum(xs) / len(vertices)
-    cy  = sum(ys) / len(vertices)
-    distances = [math.sqrt((x - cx) ** 2 + (y - cy) ** 2) for x, y in vertices]
-    n = len(distances)
-    for i in range(n):
-        prev_d = distances[(i - 1) % n]
-        curr_d = distances[i]
-        next_d = distances[(i + 1) % n]
-        if curr_d < prev_d and curr_d < next_d:
-            return True
-    return False
-
-
-def detect_shape_from_path(path):
-    if len(path) < 10:
-        return "SCANNING..."
-
-    xs = [p["x"] for p in path]
-    ys = [p["y"] for p in path]
-
-    x_range = max(xs) - min(xs)
-    y_range = max(ys) - min(ys)
-    total_displacement = math.sqrt(x_range ** 2 + y_range ** 2)
-
-    if total_displacement < 8:
-        return "SCANNING..."
-
-    step    = max(1, len(path) // 24)
-    sampled = [[p["x"], p["y"]] for p in path[::step]]
-
-    if is_roughly_linear(sampled):
-        return "MOVING IN STRAIGHT LINE..."
-
-    if is_concave_polygon(sampled):
+    ESP statusMsg values (see ESPCode.ino):
+        IDLE | RUNNING | FOLLOW | TURN | TOO CLOSE | STOPPED
+        CONCAVE | CONCAVE LOCKED | CONVEX
+    """
+    upper = msg.upper()
+    if "CONCAVE" in upper:
         return "CONCAVE SHAPE DETECTED"
-    return "CONVEX SHAPE DETECTED"
+    if "CONVEX" in upper:
+        return "CONVEX SHAPE DETECTED"
+    if upper in ("FOLLOW", "TURN", "TOO CLOSE", "RUNNING"):
+        return "SCANNING..."
+    return "INITIALIZING..."
+
+
+def _is_complete_from_msg(msg: str) -> bool:
+    """Robot has finished its scan when it locks on a shape."""
+    upper = msg.upper()
+    return "CONCAVE" in upper or "CONVEX" in upper
 
 
 # ── CSV helpers ───────────────────────────────────────────────────────────────
@@ -118,78 +74,57 @@ def csv_init():
     with open(CSV_PATH, "w", newline="") as f:
         csv.DictWriter(f, ["x", "y"]).writeheader()
 
-def csv_append(x, y):
-    with open(CSV_PATH, "a", newline="") as f:
-        csv.DictWriter(f, ["x", "y"]).writerow({"x": x, "y": y})
-
 
 # ── Background polling thread ─────────────────────────────────────────────────
 def poll_esp():
-    prev_x = prev_y = None
-    print(f"[bridge] Polling http://{ESP_IP}/ every {POLL_INTERVAL}s")
+    # The ESP32 exposes sensor data at /data as JSON.
+    # The root / endpoint only serves the HTML admin page — do NOT poll that.
+    data_url = f"http://{ESP_IP}/data"
+    print(f"[bridge] Polling {data_url} every {POLL_INTERVAL}s")
 
     while True:
         try:
-            r = requests.get(f"http://{ESP_IP}/", timeout=2)
+            r = requests.get(data_url, timeout=2)
             r.raise_for_status()
 
             raw = r.text.strip()
 
-            # ── FIX: Guard against HTML responses ────────────────────────────
-            # When the ESP32 is unreachable, a captive portal, router, or
-            # hotspot admin page at the same IP may respond with an HTML
-            # document instead of plain sensor data.  Attempting to call
-            # float() on '<!DOCTYPE' produces the error shown in the
-            # diagnostic feed.  Detect this early and raise a clear message.
-            if raw.lstrip().startswith('<'):
-                # Raise as a ConnectionError so it is caught by the
-                # requests.exceptions.ConnectionError handler below,
-                # which sets state["error"] = "ESP32 unreachable".
-                # This prevents the diagnostic feed from being flooded
-                # with a verbose HTML-guard message every poll cycle.
+            # Guard: if a captive portal / router returns HTML instead of JSON
+            if raw.lstrip().startswith("<"):
                 raise requests.exceptions.ConnectionError(
-                    f"ESP32 at {ESP_IP} returned HTML — captive portal or wrong IP"
+                    f"ESP32 at {ESP_IP}/data returned HTML — captive portal or wrong IP"
                 )
-            # ─────────────────────────────────────────────────────────────────
 
-            parts = raw.split()
+            # Parse JSON  {"msg":"FOLLOW","fr":8.3,"mr":9.1,"f":22.4,"theta":45.0}
+            try:
+                payload = r.json()
+            except ValueError as e:
+                raise ValueError(f"ESP32 /data did not return valid JSON: '{raw[:80]}' — {e}")
 
-            if len(parts) < 3:
-                raise ValueError(f"Unexpected ESP response: '{raw}'")
+            # Extract fields (graceful fallback to 0 if key missing)
+            msg            = payload.get("msg",   "IDLE")
+            front_dist     = float(payload.get("f",  0.0))   # front sensor
+            side_front_dist = float(payload.get("fr", 0.0))  # front-right sensor
+            side_back_dist  = float(payload.get("mr", 0.0))  # mid-right sensor
+            theta          = float(payload.get("theta", 0.0))
 
-            x     = int(float(parts[0]))
-            y     = int(float(parts[1]))
-            theta = float(parts[2])
-
-            front_dist      = float(parts[3]) if len(parts) > 3 else 0.0
-            side_front_dist = float(parts[4]) if len(parts) > 4 else 0.0
-            side_back_dist  = float(parts[5]) if len(parts) > 5 else 0.0
+            shape       = _shape_from_msg(msg)
+            is_complete = _is_complete_from_msg(msg)
 
             with state_lock:
-                state["x"]              = x
-                state["y"]              = y
-                state["theta"]          = theta
-                state["front_dist"]     = round(front_dist, 1)
+                state["front_dist"]      = round(front_dist,      1)
                 state["side_front_dist"] = round(side_front_dist, 1)
-                state["side_back_dist"]  = round(side_back_dist, 1)
-                state["connected"]      = True
-                state["error"]          = None
+                state["side_back_dist"]  = round(side_back_dist,  1)
+                state["theta"]           = round(theta,           1)
+                state["shape"]           = shape
+                state["is_complete"]     = is_complete
+                state["esp_msg"]         = msg
+                state["connected"]       = True
+                state["error"]           = None
+                # x / y stay 0 — the ESP has no wheel encoders / odometry
 
-                if x != prev_x or y != prev_y:
-                    state["path"].append({"x": x, "y": y})
-                    if len(state["path"]) > MAX_PATH_POINTS:
-                        state["path"].pop(0)
-                    if WRITE_CSV and prev_x is not None:
-                        csv_append(x, y)
-                    prev_x, prev_y = x, y
-
-                if len(state["path"]) >= 10:
-                    state["shape"] = detect_shape_from_path(state["path"])
-
-                if theta >= 360 and not state["is_complete"]:
-                    state["is_complete"] = True
-                    state["shape"]       = detect_shape_from_path(state["path"])
-                    print(f"[bridge] Rotation complete. Shape: {state['shape']}")
+            if is_complete:
+                print(f"[bridge] Detection complete. Shape: {shape}  (ESP msg: {msg})")
 
         except requests.exceptions.ConnectionError:
             with state_lock:
@@ -207,43 +142,51 @@ def poll_esp():
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
+
 @app.route("/sensordata")
 def sensordata():
     with state_lock:
         return jsonify(dict(state))
 
+
 @app.route("/reset", methods=["GET", "POST"])
 def reset():
     with state_lock:
-        state["path"]           = []
-        state["shape"]          = "INITIALIZING..."
-        state["is_complete"]    = False
-        state["x"]              = 0
-        state["y"]              = 0
-        state["theta"]          = 0.0
-        state["front_dist"]     = 0.0
+        state["path"]            = []
+        state["shape"]           = "INITIALIZING..."
+        state["is_complete"]     = False
+        state["x"]               = 0
+        state["y"]               = 0
+        state["theta"]           = 0.0
+        state["front_dist"]      = 0.0
         state["side_front_dist"] = 0.0
         state["side_back_dist"]  = 0.0
+        state["esp_msg"]         = ""
     if WRITE_CSV:
         csv_init()
     print("[bridge] State reset.")
     return jsonify({"status": "reset"})
 
+
 @app.route("/status")
 def status():
     with state_lock:
         return jsonify({
-            "connected":      state["connected"],
-            "path_length":    len(state["path"]),
-            "shape":          state["shape"],
-            "error":          state["error"],
+            "connected":       state["connected"],
+            "shape":           state["shape"],
+            "esp_msg":         state["esp_msg"],
+            "theta":           state["theta"],
+            "error":           state["error"],
             "side_front_dist": state["side_front_dist"],
             "side_back_dist":  state["side_back_dist"],
+            "front_dist":      state["front_dist"],
         })
+
 
 @app.route("/health")
 def health():
-    return jsonify({"ok": True, "port": PORT, "esp_ip": ESP_IP})
+    return jsonify({"ok": True, "port": PORT, "esp_ip": ESP_IP,
+                    "polling": f"http://{ESP_IP}/data"})
 
 
 def check_port(port):
@@ -265,4 +208,6 @@ if __name__ == "__main__":
     t = threading.Thread(target=poll_esp, daemon=True)
     t.start()
 
+    print(f"[bridge] Flask API listening on http://0.0.0.0:{PORT}")
+    print(f"[bridge] Endpoints: /sensordata  /status  /reset  /health")
     app.run(host="0.0.0.0", port=PORT, debug=False, use_reloader=False)

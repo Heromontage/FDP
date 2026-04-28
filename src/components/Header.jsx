@@ -37,7 +37,7 @@ export default function Header({ connectionStatus }) {
             </div>
             <h1 className="text-base md:text-xl font-bold tracking-tighter uppercase font-headline"
               style={{ color: '#00FF88' }}>
-              KINETIC SENTINEL
+              G26 | TELEMETRY ROBOT DASHBOARD
             </h1>
           </div>
 
