@@ -5,11 +5,7 @@ Changes from original:
   1. Parses 6 values from ESP: x y theta frontDist sideFrontDist sideBackDist
   2. Exposes sensor distances via /sensordata so React can display them.
   3. Fixes false-positive concave detection on straight-line paths.
-     The original `or` check only caught perfectly axis-aligned paths.
-     A diagonal straight line (x varies slightly) bypassed the guard and
-     hit is_concave_polygon(), which ALWAYS returns True for collinear
-     points (midpoint has the minimum centroid distance → local minimum).
-     Fix: added a proper linearity test using the cross-product area method.
+  4. Guards against HTML responses (captive portal / wrong IP).
 """
 
 import sys, time, threading, math, csv, os, socket
@@ -36,7 +32,6 @@ state = {
     "is_complete":    False,
     "connected":      False,
     "error":          None,
-    # ↓ NEW — sensor distances now included
     "front_dist":     0.0,
     "side_front_dist": 0.0,
     "side_back_dist":  0.0,
@@ -44,10 +39,9 @@ state = {
 state_lock = threading.Lock()
 
 
-# ── Shape detection — FIXED ──────────────────────────────────────────────────
+# ── Shape detection ───────────────────────────────────────────────────────────
 
 def _polygon_area(vertices):
-    """Signed area via the shoelace formula."""
     n = len(vertices)
     area = 0.0
     for i in range(n):
@@ -67,18 +61,6 @@ def _path_length(vertices):
 
 
 def is_roughly_linear(vertices, area_ratio_threshold=0.04):
-    """
-    True when the sampled path is roughly a straight line.
-
-    Method: compute the polygon area (shoelace) and compare it to the square
-    of the path length.  A genuine closed shape has area ~ length²/4π,
-    while a nearly-straight path has area ≈ 0.  The ratio area / length²
-    is essentially zero for collinear or near-collinear point sets.
-
-    area_ratio_threshold=0.04 means: if the enclosed area is less than
-    4 % of length², call it a straight line.  Tune upward if short curved
-    segments are being missed; tune downward if gentle curves are mislabelled.
-    """
     if len(vertices) < 3:
         return True
     length = _path_length(vertices)
@@ -89,10 +71,6 @@ def is_roughly_linear(vertices, area_ratio_threshold=0.04):
 
 
 def is_concave_polygon(vertices):
-    """
-    Original centroid-distance algorithm — unchanged, but now only called
-    AFTER is_roughly_linear() has confirmed the path is not a straight line.
-    """
     if len(vertices) < 4:
         return False
     xs  = [v[0] for v in vertices]
@@ -121,21 +99,9 @@ def detect_shape_from_path(path):
     y_range = max(ys) - min(ys)
     total_displacement = math.sqrt(x_range ** 2 + y_range ** 2)
 
-    # Robot has barely moved — keep scanning
     if total_displacement < 8:
         return "SCANNING..."
 
-    # ── FIX: robust straight-line guard ──────────────────────────────────────
-    # Original code:  if (x_range < 5) or (y_range < 5): → only catches
-    # perfectly vertical / horizontal motion. A diagonal path where both
-    # x_range and y_range exceed 5 (e.g., robot drifts slightly while
-    # going "straight") falls through to is_concave_polygon() and always
-    # gets flagged concave.
-    #
-    # New approach: sample the path, then measure how much enclosed area
-    # the sampled polygon has relative to its perimeter.  A straight line
-    # has area ≈ 0; a real shape has area > 0.
-    # ─────────────────────────────────────────────────────────────────────────
     step    = max(1, len(path) // 24)
     sampled = [[p["x"], p["y"]] for p in path[::step]]
 
@@ -167,18 +133,34 @@ def poll_esp():
             r = requests.get(f"http://{ESP_IP}/", timeout=2)
             r.raise_for_status()
 
-            parts = r.text.strip().split()
+            raw = r.text.strip()
 
-            # Expect at least 3 values: x y theta
-            # Now also accept 6: x y theta frontDist sideFrontDist sideBackDist
+            # ── FIX: Guard against HTML responses ────────────────────────────
+            # When the ESP32 is unreachable, a captive portal, router, or
+            # hotspot admin page at the same IP may respond with an HTML
+            # document instead of plain sensor data.  Attempting to call
+            # float() on '<!DOCTYPE' produces the error shown in the
+            # diagnostic feed.  Detect this early and raise a clear message.
+            if raw.lstrip().startswith('<'):
+                # Raise as a ConnectionError so it is caught by the
+                # requests.exceptions.ConnectionError handler below,
+                # which sets state["error"] = "ESP32 unreachable".
+                # This prevents the diagnostic feed from being flooded
+                # with a verbose HTML-guard message every poll cycle.
+                raise requests.exceptions.ConnectionError(
+                    f"ESP32 at {ESP_IP} returned HTML — captive portal or wrong IP"
+                )
+            # ─────────────────────────────────────────────────────────────────
+
+            parts = raw.split()
+
             if len(parts) < 3:
-                raise ValueError(f"Unexpected ESP response: '{r.text.strip()}'")
+                raise ValueError(f"Unexpected ESP response: '{raw}'")
 
             x     = int(float(parts[0]))
             y     = int(float(parts[1]))
             theta = float(parts[2])
 
-            # ── NEW: parse sensor distances if present ─────────────────────
             front_dist      = float(parts[3]) if len(parts) > 3 else 0.0
             side_front_dist = float(parts[4]) if len(parts) > 4 else 0.0
             side_back_dist  = float(parts[5]) if len(parts) > 5 else 0.0

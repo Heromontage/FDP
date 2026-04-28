@@ -1,175 +1,184 @@
 #include <WiFi.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <math.h>
+#include <WebServer.h>
 
-// --- NETWORK SETUP ---
 IPAddress local_IP(172, 20, 10, 6); 
 IPAddress gateway(172, 20, 10, 1);    
 IPAddress subnet(255, 255, 255, 0);
 
-const char *ssid = "Mehul’s iPhone"; 
-const char *password = "mahi2604"; 
+const char* ssid = "Mehul’s iPhone";
+const char* password = "mahi2604";
+WebServer server(80);
 
-// --- SAFE ULTRASONIC PINS ---
-#define echo1 4
-#define trig1 16
+// --- Pinout (No Changes) ---A
+const int ENA = 14, IN1 = 27, IN2 = 26;
+const int ENB = 32, IN3 = 25, IN4 = 33;
+const int trigFR = 5, echoFR = 17;
+const int trigBR = 18, echoBR = 19;
+const int trigF = 16, echoF = 4;
 
-#define echo2 17  // SIDE SENSOR 1 (Front-Side)
-#define trig2 5
+// --- STATE MACHINE (No Changes) ---
+bool isRunning = false;
+char statusMsg[40] = "System Idle";
+enum State { FOLLOWING, DRIVE_PAST, PIVOT_RIGHT, STOPPED };
+State currentState = STOPPED;
 
-#define echo3 19  // SIDE SENSOR 2 (Back-Side)
-#define trig3 18
+// --- TELEMETRY ---
+float frFilt = 15.0, brFilt = 15.0;
+float prevAngErr = 0, prevDistErr = 0;
+int curL = 0, curR = 0;
+unsigned long stateTimer = 0;
+bool sensorToggle = true;
 
-// --- SAFE MOTOR DRIVER PINS ---
-#define en12 14
-#define in1  27
-#define in2  26  
-#define in3  25  
-#define in4  33  
-#define en34 32
+// --- TUNABLE PARAMETERS (Exposed) ---
+float Kpa = 5.0, Kda = 2.0;    
+float Kpd = 10.0, Kdd = 1.0;   
+int bSpd = 180, pSpd = 170;    
+int ramp = 35;                 
+float tDist = 15.0;            
+float cThr = 35.0;             
+float eThr = 20.0;             
+int pTime = 1800;              
+float alp = 0.3;               
+float sLim = 10.0;             
 
-float front_distance, side_front_dist, side_back_dist;
-float msTocm = 0.0343 / 2;
+// ---------------- POWER ----------------
+void drive(int left, int right) {
+  if (!isRunning) { left = 0; right = 0; }
+  if (left > curL) curL += min(ramp, left - curL);
+  else if (left < curL) curL -= min(ramp, curL - left);
+  if (right > curR) curR += min(ramp, right - curR);
+  else if (right < curR) curR -= min(ramp, curR - right);
 
-// --- ODOMETRY ---
-float x = 0.0, y = 0.0, theta = 0.0;
+  digitalWrite(IN1, curL >= 0 ? HIGH : LOW);
+  digitalWrite(IN2, curL >= 0 ? LOW : HIGH);
+  digitalWrite(IN3, curR >= 0 ? HIGH : LOW);
+  digitalWrite(IN4, curR >= 0 ? LOW : HIGH);
+  ledcWrite(ENA, abs(curL));
+  ledcWrite(ENB, abs(curR));
+}
 
-// --- DUAL-SENSOR PID VARIABLES ---
-float targetDistance = 10.0; // Stay 10cm from the wall
-float Kp_dist = 8.0;         // Aggressiveness for fixing distance
-float Kp_angle = 12.0;       // Aggressiveness for fixing rotation/angle
-int baseSpeed = 150;         // Forward speed (0-255)
+// ---------------- SENSORS ----------------
+float getDist(int trig, int echo) {
+  digitalWrite(trig, LOW); delayMicroseconds(2);
+  digitalWrite(trig, HIGH); delayMicroseconds(10);
+  digitalWrite(trig, LOW);
+  long dur = pulseIn(echo, HIGH, 18000); 
+  float d = (dur <= 0) ? 400.0 : (dur * 0.034 / 2);
+  return d;
+}
 
-AsyncWebServer server(80);
+void updateSensors() {
+  float r = sensorToggle ? getDist(trigFR, echoFR) : getDist(trigBR, echoBR);
+  if (isRunning && r < sLim) { isRunning = false; strncpy(statusMsg, "SAFETY STOP", 40); }
+  if (sensorToggle) frFilt = (alp * r) + ((1.0 - alp) * frFilt);
+  else brFilt = (alp * r) + ((1.0 - alp) * brFilt);
+  sensorToggle = !sensorToggle;
+}
 
-void wifi_init(){
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    Serial.println("Connecting to WiFi...");
+// ---------------- LOGIC ----------------
+void runPID() {
+  float aErr = frFilt - brFilt;
+  float dErr = ((frFilt + brFilt) / 2.0) - tDist;
+  float corr = (Kpa * aErr) + (Kda * (aErr - prevAngErr)) + (Kpd * dErr);
+  prevAngErr = aErr;
+  int turn = constrain((int)corr, -90, 90);
+  drive(bSpd - turn, bSpd + turn);
+}
+
+// --- UPDATED UI: NOW SHOWS FR AND BR DISTANCES ---
+const char INDEX_HTML[] PROGMEM = R"rawliteral(
+<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{font-family:sans-serif;background:#0f172a;color:#fff;text-align:center;margin:0;}
+  .telemetry{background:#1e293b;padding:15px;border-bottom:2px solid #334155;display:flex;justify-content:space-around;font-weight:bold;color:#10b981;font-size:1.2em;}
+  .grid{display:flex;flex-wrap:wrap;justify-content:center;}
+  .card{background:#1e293b;padding:15px;margin:5px;border-radius:10px;border:1px solid #334155;width:180px;}
+  input{width:100%;margin-top:10px;} label{font-size:12px;color:#94a3b8;}
+  .btn{padding:15px;width:45%;margin:10px;font-weight:bold;border-radius:8px;border:none;cursor:pointer;}
+</style></head><body>
+  <div class="telemetry">
+    <div>FR: <span id="v_fr">0.0</span></div>
+    <div>BR: <span id="v_br">0.0</span></div>
+  </div>
+  <div style="background:#334155;padding:10px;">Status: <span id="st">-</span></div>
+  <div class="grid">
+    <div class="card"><label>Kp Angle</label><input type="range" id="ka" min="0" max="30" step="0.1" onchange="u()"></div>
+    <div class="card"><label>Kd Angle</label><input type="range" id="kda" min="0" max="10" step="0.1" onchange="u()"></div>
+    <div class="card"><label>Kp Dist</label><input type="range" id="kp" min="0" max="20" step="0.1" onchange="u()"></div>
+    <div class="card"><label>Kd Dist</label><input type="range" id="kdd" min="0" max="10" step="0.1" onchange="u()"></div>
+    <div class="card"><label>Base Spd</label><input type="range" id="bs" min="100" max="255" onchange="u()"></div>
+    <div class="card"><label>Piv Spd</label><input type="range" id="ps" min="100" max="255" onchange="u()"></div>
+    <div class="card"><label>Corner Thr</label><input type="range" id="ct" min="20" max="100" onchange="u()"></div>
+    <div class="card"><label>Drive Past</label><input type="range" id="pt" min="500" max="4000" step="50" onchange="u()"></div>
+    <div class="card"><label>Safety Lim</label><input type="range" id="sl" min="5" max="20" onchange="u()"></div>
+    <div class="card"><label>Filter Alp</label><input type="range" id="al" min="0.1" max="0.9" step="0.05" onchange="u()"></div>
+  </div>
+  <button class="btn" style="background:#10b981" onclick="fetch('/start')">START</button>
+  <button class="btn" style="background:#f43f5e" onclick="fetch('/stop')">STOP</button>
+  <script>
+    function u(){
+      let q = `?ka=${document.getElementById('ka').value}&kda=${document.getElementById('kda').value}&kp=${document.getElementById('kp').value}&kdd=${document.getElementById('kdd').value}&bs=${document.getElementById('bs').value}&ps=${document.getElementById('ps').value}&ct=${document.getElementById('ct').value}&pt=${document.getElementById('pt').value}&sl=${document.getElementById('sl').value}&al=${document.getElementById('al').value}`;
+      fetch('/tune'+q);
+    }
+    setInterval(()=>{
+      fetch('/data').then(r=>r.json()).then(j=>{
+        document.getElementById('st').innerHTML=j.msg;
+        document.getElementById('v_fr').innerHTML=j.fr.toFixed(1);
+        document.getElementById('v_br').innerHTML=j.br.toFixed(1);
+      });
+    }, 400);
+  </script>
+</body></html>)rawliteral";
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(IN1, OUTPUT); pinMode(IN2, OUTPUT); pinMode(IN3, OUTPUT); pinMode(IN4, OUTPUT);
+  ledcAttach(ENA, 5000, 8); ledcAttach(ENB, 5000, 8);
+  pinMode(trigFR, OUTPUT); pinMode(echoFR, INPUT); pinMode(trigBR, OUTPUT); pinMode(echoBR, INPUT);
+  if (!WiFi.config(local_IP, gateway, subnet)) {
+    Serial.println("STA Failed to configure");
   }
-  Serial.println("Connected to WiFi");
-
-  IPAddress ip = WiFi.localIP();
-  Serial.println("***************************************");
-  Serial.print("IP Address: ");
-  Serial.println(ip);
-  Serial.println("***************************************");
-
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", fetch());
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+  server.on("/", []() { server.send_P(200, "text/html", INDEX_HTML); });
+  server.on("/start", []() { isRunning = true; currentState = FOLLOWING; strncpy(statusMsg, "FOLLOWING", 40); server.send(200); });
+  server.on("/stop", []() { isRunning = false; currentState = STOPPED; strncpy(statusMsg, "STOPPED", 40); server.send(200); });
+  server.on("/tune", []() {
+    Kpa = server.arg("ka").toFloat(); Kda = server.arg("kda").toFloat();
+    Kpd = server.arg("kp").toFloat(); Kdd = server.arg("kdd").toFloat();
+    bSpd = server.arg("bs").toInt(); pSpd = server.arg("ps").toInt();
+    cThr = server.arg("ct").toFloat(); pTime = server.arg("pt").toInt();
+    sLim = server.arg("sl").toFloat(); alp = server.arg("al").toFloat();
+    server.send(200);
+  });
+  server.on("/data", []() {
+    char json[120]; 
+    // NOW INCLUDING FR AND BR IN THE JSON DATA
+    snprintf(json, sizeof(json), "{\"msg\":\"%s\",\"fr\":%.1f,\"br\":%.1f}", statusMsg, frFilt, brFilt);
+    server.send(200, "application/json", json);
   });
   server.begin();
 }
 
-String fetch(){
-  return String(x) + " " + String(y) + " " + String(theta);
-}
-
-void setup() {
-  Serial.begin(115200);
-  if (!WiFi.config(local_IP, gateway, subnet)) {
-    Serial.println("STA Failed to configure");
-  }
-
-  WiFi.setTxPower(WIFI_POWER_8_5dBm);
-  wifi_init();
-
-  pinMode(in1, OUTPUT); pinMode(in2, OUTPUT); pinMode(en12, OUTPUT);
-  pinMode(in3, OUTPUT); pinMode(in4, OUTPUT); pinMode(en34, OUTPUT);
-  
-  pinMode(trig1, OUTPUT); pinMode(echo1, INPUT);
-  pinMode(trig2, OUTPUT); pinMode(echo2, INPUT);
-  pinMode(trig3, OUTPUT); pinMode(echo3, INPUT); // Added 3rd sensor
-
-  digitalWrite(in1, LOW); digitalWrite(in2, LOW);  
-  digitalWrite(in3, LOW); digitalWrite(in4, LOW);
-}
-
-float getFrontDist() {
-  digitalWrite(trig1, LOW); delay(2);
-  digitalWrite(trig1, HIGH); delay(5);
-  digitalWrite(trig1, LOW);
-  long duration = pulseIn(echo1, HIGH, 30000);
-  return abs(duration * msTocm);
-}
-
-float getSideFrontDist() {
-  digitalWrite(trig2, LOW); delay(2);
-  digitalWrite(trig2, HIGH); delay(5);
-  digitalWrite(trig2, LOW);
-  long duration = pulseIn(echo2, HIGH, 30000);
-  return abs(duration * msTocm);
-}
-
-float getSideBackDist() {
-  digitalWrite(trig3, LOW); delay(2);
-  digitalWrite(trig3, HIGH); delay(5);
-  digitalWrite(trig3, LOW);
-  long duration = pulseIn(echo3, HIGH, 30000);
-  return abs(duration * msTocm);
-}
-
-void setMotors(int leftSpeed, int rightSpeed) {
-  leftSpeed = constrain(leftSpeed, 0, 255);
-  rightSpeed = constrain(rightSpeed, 0, 255);
-
-  digitalWrite(in1, HIGH); digitalWrite(in2, LOW);
-  analogWrite(en12, leftSpeed); 
-
-  digitalWrite(in3, HIGH); digitalWrite(in4, LOW);
-  analogWrite(en34, rightSpeed);
-}
-
-void stopMotors() {
-  digitalWrite(in1, LOW); digitalWrite(in2, LOW);
-  digitalWrite(in3, LOW); digitalWrite(in4, LOW);
-  analogWrite(en12, 0);   analogWrite(en34, 0);
-}
-
 void loop() {
-  front_distance = getFrontDist();
-  side_front_dist = getSideFrontDist();
-  side_back_dist = getSideBackDist();
+  server.handleClient();
+  updateSensors();
+  yield();
+  if (!isRunning) { drive(0,0); return; }
 
-  if (front_distance > 0 && front_distance < 15) {
-    // Emergency Brake
-    stopMotors();
-  } else if (side_front_dist > 0 && side_front_dist < 100 && side_back_dist > 0 && side_back_dist < 100) {
-    // --- ADVANCED P-CONTROLLER ---
-    
-    // 1. Distance Error (How far are we from 10cm?)
-    float dist_error = side_front_dist - targetDistance;
-    
-    // 2. Angle Error (Are we parallel? If front > back, we are pointing away from the wall)
-    float angle_error = side_front_dist - side_back_dist;
-
-    // 3. Combined Correction
-    float correction = (Kp_dist * dist_error) + (Kp_angle * angle_error);
-
-    // IMPORTANT: STEERING DIRECTION
-    // Assuming sensors are on the LEFT wall. If correction is positive (too far away), 
-    // we want to turn LEFT toward the wall. To turn left, we slow down the left wheel and speed up the right wheel.
-    int leftSpeed = baseSpeed - correction;  
-    int rightSpeed = baseSpeed + correction; 
-
-    /* Note: If your sensors are on the RIGHT side of the robot instead of the left, 
-       just swap the plus and minus signs above!
-       leftSpeed = baseSpeed + correction;
-       rightSpeed = baseSpeed - correction; */
-
-    setMotors(leftSpeed, rightSpeed);
-    y += 1.0; 
-  } else {
-    // Lost the wall? Just drive straight
-    setMotors(baseSpeed, baseSpeed);
-    y += 1.0;
+  switch (currentState) {
+    case FOLLOWING:
+      if (frFilt > cThr) { stateTimer = millis(); currentState = DRIVE_PAST; strncpy(statusMsg, "CORNER DETECTED", 40); }
+      else runPID();
+      break;
+    case DRIVE_PAST:
+      drive(bSpd, bSpd);
+      if (millis() - stateTimer > pTime) { drive(0,0); delay(200); currentState = PIVOT_RIGHT; stateTimer = millis(); }
+      break;
+    case PIVOT_RIGHT:
+      drive(pSpd, -pSpd);
+      if (millis() - stateTimer > 800 && frFilt < eThr) { currentState = FOLLOWING; strncpy(statusMsg, "FOLLOWING", 40); }
+      break;
   }
-  // --- ADD THIS TO YOUR LOOP() ---
-  Serial.print("Front: "); Serial.print(front_distance);
-  Serial.print(" cm | Front-Side: "); Serial.print(side_front_dist);
-  Serial.print(" cm | Back-Side: "); Serial.println(side_back_dist);
-  // -------------------------------
-  delay(50);
+  delay(30);
 }

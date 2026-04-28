@@ -66,11 +66,9 @@ const DEMO_LOGS = [
 export default function App() {
   const [sensorData, setSensorData] = useState({
     x: 0, y: 0, theta: 0,
-    // ── NEW: three sensor distances ──
     front_dist:      0,
     side_front_dist: 0,
     side_back_dist:  0,
-    // ────────────────────────────────
     shape: 'INITIALIZING...',
     path: [],
     is_complete: false,
@@ -81,8 +79,11 @@ export default function App() {
   const [logs, setLogs]                         = useState([]);
   const [bridgeError, setBridgeError]           = useState(null);
 
-  const demoTickRef  = useRef(0);
-  const demoStageRef = useRef(0);
+  const demoTickRef   = useRef(0);
+  const demoStageRef  = useRef(0);
+  // ── Deduplication: track last logged error so it only appears once ──────────
+  const lastErrorRef  = useRef(null);
+  const lastShapeRef  = useRef(null);
 
   const addLog = useCallback((message, level = 'info') => {
     const t = new Date().toLocaleTimeString('en-US', { hour12: false });
@@ -143,7 +144,6 @@ export default function App() {
 
       const data = await res.json();
 
-      // Back-fill sensor distances to 0 if old bridge server is running
       data.front_dist      = data.front_dist      ?? 0;
       data.side_front_dist = data.side_front_dist ?? 0;
       data.side_back_dist  = data.side_back_dist  ?? 0;
@@ -153,21 +153,44 @@ export default function App() {
       setConnectionStatus(data.connected ? 'Connected' : 'Polling...');
       setLastUpdated(new Date());
 
-      if (data.shape?.includes('CONCAVE'))
+      // ── Shape log: only log when shape actually changes ──────────────────
+      if (data.shape?.includes('CONCAVE') && data.shape !== lastShapeRef.current) {
         addLog(`SHAPE: ${data.shape}`, 'success');
-      if (data.error && data.error !== 'ESP32 unreachable')
-        addLog(`ESP32 ERROR: ${data.error}`, 'error');
-      // Warn in logs when sensors look disconnected
+        lastShapeRef.current = data.shape;
+      }
+
+      // ── Error log: only log when error message changes (deduplication) ───
+      // This prevents the feed from flooding when the ESP32 is unreachable
+      // and the same error fires every 500 ms poll cycle.
+      if (data.error) {
+        if (data.error !== lastErrorRef.current) {
+          addLog(`ESP32 ERROR: ${data.error}`, 'error');
+          lastErrorRef.current = data.error;
+        }
+      } else {
+        // Error cleared — log recovery once and reset tracker
+        if (lastErrorRef.current !== null) {
+          addLog('ESP32: Connection restored', 'success');
+          lastErrorRef.current = null;
+        }
+      }
+
       if (data.side_front_dist >= 390)
         addLog('SENSOR: Side-front returning max range — check wiring (GPIO 22)', 'warning');
       if (data.side_back_dist >= 390)
         addLog('SENSOR: Side-back returning max range — check wiring (GPIO 23)', 'warning');
+
     } catch (err) {
       const msg = err.name === 'AbortError'
         ? 'Bridge request timed out'
         : `Cannot reach bridge: ${err.message}`;
       setConnectionStatus('Disconnected');
-      setBridgeError(msg);
+
+      // Only log bridge-level errors once too
+      if (msg !== lastErrorRef.current) {
+        setBridgeError(msg);
+        lastErrorRef.current = msg;
+      }
     }
   }, [addLog]);
 
@@ -187,6 +210,7 @@ export default function App() {
     }
     demoTickRef.current  = 0;
     demoStageRef.current = 0;
+    lastShapeRef.current = null;
     setSensorData(s => ({
       ...s,
       path: [], shape: 'INITIALIZING...', is_complete: false,
@@ -224,7 +248,6 @@ export default function App() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 md:gap-6 xl:gap-8">
           <div className="lg:col-span-3 flex flex-col gap-4 md:gap-6">
 
-            {/* ── Row 1: the three SENSOR DISTANCES ── */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
               <SensorCard
                 label="Side Front"
@@ -260,7 +283,6 @@ export default function App() {
               />
             </div>
 
-            {/* ── Row 2: odometry values ── */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
               <SensorCard
                 label="X Position"
@@ -324,7 +346,7 @@ export default function App() {
   );
 }
 
-// ── Robot Position mini-panel (now includes sensor distances) ─────────────────
+// ── Robot Position mini-panel ─────────────────────────────────────────────────
 function RobotPositionPanel({ x, y, theta, sideFront, sideBack }) {
   const items = [
     { label: 'X POS',      value: x,         unit: 'u',  color: '#00FF88' },
@@ -357,7 +379,7 @@ function RobotPositionPanel({ x, y, theta, sideFront, sideBack }) {
   );
 }
 
-// ── Path Visualizer Panel (unchanged logic, just forwarded) ───────────────────
+// ── Path Visualizer Panel ─────────────────────────────────────────────────────
 function PathVisualizerPanel({ path, theta, isConcave, isComplete, onReset }) {
   const glowColor = isConcave ? '#00FF88' : '#3CD7FF';
   return (
@@ -394,7 +416,7 @@ function PathVisualizerPanel({ path, theta, isConcave, isComplete, onReset }) {
   );
 }
 
-// ── Path Visualization SVG (unchanged from original) ─────────────────────────
+// ── Path Visualization SVG ────────────────────────────────────────────────────
 function PathVisualization({ path, theta, isConcave, isComplete }) {
   const W = 600, H = 300, PAD = 40;
   const glowColor = isConcave ? '#00FF88' : '#3CD7FF';
